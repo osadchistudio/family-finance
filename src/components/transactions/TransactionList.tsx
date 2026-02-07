@@ -1,0 +1,818 @@
+'use client';
+
+import { useState, useMemo } from 'react';
+import { formatCurrency, formatDate, getHebrewMonthName } from '@/lib/formatters';
+import { Search, LayoutList, PieChart, Wand2, Loader2, Layers, ChevronRight, ChevronLeft, CalendarDays, Repeat, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
+import { CategorySelector } from './CategorySelector';
+import { showToast } from '@/components/ui/Toast';
+import dayjs from 'dayjs';
+
+interface Transaction {
+  id: string;
+  date: string;
+  description: string;
+  amount: string;
+  categoryId: string | null;
+  category: {
+    id: string;
+    name: string;
+    icon: string;
+    color: string;
+  } | null;
+  account: {
+    id: string;
+    name: string;
+    institution: string;
+  };
+  isAutoCategorized: boolean;
+  isRecurring: boolean;
+  notes: string | null;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  icon: string | null;
+  color: string | null;
+}
+
+interface Account {
+  id: string;
+  name: string;
+  institution: string;
+  cardNumber: string | null;
+}
+
+interface TransactionListProps {
+  transactions: Transaction[];
+  categories: Category[];
+  accounts: Account[];
+}
+
+type ViewMode = 'list' | 'byCategory' | 'grouped';
+
+interface GroupedTransaction {
+  description: string;
+  transactions: Transaction[];
+  totalAmount: number;
+  count: number;
+  category: Transaction['category'];
+  categoryId: string | null;
+  firstTransactionId: string;
+  dates: string[];
+}
+
+export function TransactionList({ transactions: initialTransactions, categories, accounts }: TransactionListProps) {
+  const [transactions, setTransactions] = useState(initialTransactions);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedAccount, setSelectedAccount] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState<string>(''); // '' = all, 'YYYY-MM' = specific
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
+
+  // Notes inline editing
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteValue, setNoteValue] = useState('');
+
+  // Expanded categories in byCategory view
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  const toggleCategoryExpanded = (categoryKey: string) => {
+    setExpandedCategories(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(categoryKey)) {
+        newSet.delete(categoryKey);
+      } else {
+        newSet.add(categoryKey);
+      }
+      return newSet;
+    });
+  };
+
+  // Compute available months from transactions (sorted newest first)
+  const availableMonths = useMemo(() => {
+    const monthSet = new Set<string>();
+    for (const tx of transactions) {
+      monthSet.add(dayjs(tx.date).format('YYYY-MM'));
+    }
+    return Array.from(monthSet).sort((a, b) => b.localeCompare(a));
+  }, [transactions]);
+
+  const currentMonthIndex = selectedMonth ? availableMonths.indexOf(selectedMonth) : -1;
+
+  const goToPrevMonth = () => {
+    if (!selectedMonth) {
+      // From "all" go to newest month
+      if (availableMonths.length > 0) setSelectedMonth(availableMonths[0]);
+    } else if (currentMonthIndex < availableMonths.length - 1) {
+      setSelectedMonth(availableMonths[currentMonthIndex + 1]);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (selectedMonth && currentMonthIndex > 0) {
+      setSelectedMonth(availableMonths[currentMonthIndex - 1]);
+    } else if (selectedMonth && currentMonthIndex === 0) {
+      // Already at newest month — could go to "all"
+      setSelectedMonth('');
+    }
+  };
+
+  const getMonthLabel = (monthKey: string) => {
+    const d = dayjs(monthKey + '-01');
+    return `${getHebrewMonthName(d.month())} ${d.year()}`;
+  };
+
+  const uncategorizedCount = transactions.filter(tx => !tx.categoryId).length;
+
+  const filteredTransactions = transactions.filter(tx => {
+    const matchesSearch = tx.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = !selectedCategory ||
+      (selectedCategory === 'uncategorized' ? !tx.categoryId : tx.categoryId === selectedCategory);
+    const matchesAccount = !selectedAccount || tx.account.id === selectedAccount;
+    const matchesMonth = !selectedMonth || dayjs(tx.date).format('YYYY-MM') === selectedMonth;
+    return matchesSearch && matchesCategory && matchesAccount && matchesMonth;
+  });
+
+  // Group transactions by description for grouped view
+  const groupedTransactions = useMemo(() => {
+    const groups: Record<string, GroupedTransaction> = {};
+
+    for (const tx of filteredTransactions) {
+      const key = tx.description.toLowerCase().trim();
+
+      if (!groups[key]) {
+        groups[key] = {
+          description: tx.description,
+          transactions: [],
+          totalAmount: 0,
+          count: 0,
+          category: tx.category,
+          categoryId: tx.categoryId,
+          firstTransactionId: tx.id,
+          dates: [],
+        };
+      }
+
+      groups[key].transactions.push(tx);
+      groups[key].totalAmount += parseFloat(tx.amount);
+      groups[key].count++;
+      groups[key].dates.push(tx.date);
+
+      // Use most recent category if available
+      if (tx.category && !groups[key].category) {
+        groups[key].category = tx.category;
+        groups[key].categoryId = tx.categoryId;
+      }
+    }
+
+    // Sort by total amount (expenses first, largest first)
+    return Object.values(groups).sort((a, b) => a.totalAmount - b.totalAmount);
+  }, [filteredTransactions]);
+
+  // Group transactions by category for the category view
+  const groupedByCategory = filteredTransactions.reduce((acc, tx) => {
+    const categoryKey = tx.categoryId || 'uncategorized';
+    if (!acc[categoryKey]) {
+      acc[categoryKey] = {
+        category: tx.category,
+        transactions: [],
+        total: 0,
+      };
+    }
+    acc[categoryKey].transactions.push(tx);
+    acc[categoryKey].total += parseFloat(tx.amount);
+    return acc;
+  }, {} as Record<string, { category: Transaction['category']; transactions: Transaction[]; total: number }>);
+
+  // Sort categories by total (expenses first, largest first)
+  const sortedCategories = Object.entries(groupedByCategory)
+    .sort(([, a], [, b]) => a.total - b.total);
+
+  const handleAutoCategorize = async () => {
+    if (isAutoCategorizing) return;
+
+    setIsAutoCategorizing(true);
+    showToast('מתחיל זיהוי אוטומטי...', 'info');
+
+    try {
+      const response = await fetch('/api/transactions/auto-categorize', {
+        method: 'POST',
+      });
+
+      if (!response.ok) throw new Error('Failed to auto-categorize');
+
+      const result = await response.json();
+
+      if (result.categorized > 0) {
+        showToast(`זוהו וסווגו ${result.categorized} עסקאות!`, 'learning');
+        // Refresh the page to show updated data
+        window.location.reload();
+      } else {
+        showToast('לא נמצאו עסקאות חדשות לסיווג', 'info');
+      }
+    } catch (error) {
+      console.error('Auto-categorize error:', error);
+      showToast('שגיאה בזיהוי אוטומטי', 'error');
+    } finally {
+      setIsAutoCategorizing(false);
+    }
+  };
+
+  const handleCategoryChange = async (transactionId: string, categoryId: string, learnFromThis: boolean) => {
+    try {
+      const response = await fetch(`/api/transactions/${transactionId}/category`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categoryId, learnFromThis }),
+      });
+
+      if (!response.ok) throw new Error('Failed to update category');
+
+      const result = await response.json();
+
+      // Update local state
+      setTransactions(prev => prev.map(tx => {
+        if (tx.id === transactionId) {
+          const newCategory = categories.find(c => c.id === categoryId);
+          return {
+            ...tx,
+            categoryId,
+            category: newCategory ? {
+              id: newCategory.id,
+              name: newCategory.name,
+              icon: newCategory.icon || '📁',
+              color: newCategory.color || '#6B7280',
+            } : null,
+          };
+        }
+        // Also update similar transactions if learning was applied
+        if (learnFromThis && result.updatedSimilar > 0) {
+          const updatedTx = transactions.find(t => t.id === transactionId);
+          if (updatedTx && tx.description === updatedTx.description && !tx.categoryId) {
+            const newCategory = categories.find(c => c.id === categoryId);
+            return {
+              ...tx,
+              categoryId,
+              category: newCategory ? {
+                id: newCategory.id,
+                name: newCategory.name,
+                icon: newCategory.icon || '📁',
+                color: newCategory.color || '#6B7280',
+              } : null,
+            };
+          }
+        }
+        return tx;
+      }));
+
+      if (learnFromThis) {
+        if (result.updatedSimilar > 0) {
+          showToast(`למדתי! עודכנו ${result.updatedSimilar} עסקאות דומות`, 'learning');
+        } else if (result.keywordAdded) {
+          showToast(`למדתי! אזהה "${result.keywordAdded}" בעתיד`, 'learning');
+        } else {
+          showToast('הקטגוריה עודכנה', 'success');
+        }
+      } else {
+        showToast('הקטגוריה עודכנה', 'success');
+      }
+    } catch (error) {
+      console.error('Error updating category:', error);
+      alert('שגיאה בעדכון הקטגוריה');
+    }
+  };
+
+  // --- Notes handlers ---
+  const startEditingNote = (id: string, currentNote: string | null) => {
+    setEditingNoteId(id);
+    setNoteValue(currentNote || '');
+  };
+
+  const handleNoteSave = async (transactionId: string) => {
+    try {
+      await fetch(`/api/transactions/${transactionId}/notes`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: noteValue.trim() || null }),
+      });
+      setTransactions(prev => prev.map(tx =>
+        tx.id === transactionId ? { ...tx, notes: noteValue.trim() || null } : tx
+      ));
+      showToast('הערה נשמרה', 'success');
+    } catch {
+      showToast('שגיאה בשמירת הערה', 'error');
+    } finally {
+      setEditingNoteId(null);
+    }
+  };
+
+  // --- Recurring toggle handler ---
+  const handleToggleRecurring = async (transactionId: string, isRecurring: boolean) => {
+    try {
+      const response = await fetch(`/api/transactions/${transactionId}/recurring`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isRecurring, learnFromThis: true }),
+      });
+      if (!response.ok) throw new Error('Failed');
+      const result = await response.json();
+
+      setTransactions(prev => prev.map(tx => {
+        if (tx.id === transactionId) return { ...tx, isRecurring };
+        // Cascade to similar descriptions if learning was applied
+        if (result.updatedSimilar > 0 && isRecurring && result.keywordAdded) {
+          const targetTx = prev.find(t => t.id === transactionId);
+          if (targetTx && tx.description.toLowerCase().includes(result.keywordAdded)) {
+            return { ...tx, isRecurring: true };
+          }
+        }
+        return tx;
+      }));
+
+      if (isRecurring) {
+        const msg = result.updatedSimilar > 0
+          ? `סומן כהוצאה קבועה! עודכנו ${result.updatedSimilar} עסקאות דומות`
+          : 'סומן כהוצאה קבועה';
+        showToast(msg, 'learning');
+      } else {
+        showToast('הוסר מהוצאות קבועות', 'success');
+      }
+    } catch {
+      showToast('שגיאה בעדכון', 'error');
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm">
+      {/* Filters */}
+      <div className="p-4 border-b flex flex-wrap gap-4">
+        <div className="flex-1 min-w-[200px] relative">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="חיפוש תנועות..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pr-10 pl-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+        </div>
+        <div className="min-w-[180px]">
+          <select
+            value={selectedAccount}
+            onChange={(e) => setSelectedAccount(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">כל החשבונות</option>
+            {accounts.map(acc => (
+              <option key={acc.id} value={acc.id}>
+                {acc.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-[180px]">
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">כל הקטגוריות</option>
+            <option value="uncategorized">ללא קטגוריה</option>
+            {categories.map(cat => (
+              <option key={cat.id} value={cat.id}>
+                {cat.icon} {cat.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* View mode toggle */}
+        <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+          <button
+            onClick={() => setViewMode('list')}
+            className={`px-3 py-2 flex items-center gap-1 text-sm ${
+              viewMode === 'list' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <LayoutList className="h-4 w-4" />
+            רשימה
+          </button>
+          <button
+            onClick={() => setViewMode('grouped')}
+            className={`px-3 py-2 flex items-center gap-1 text-sm border-r ${
+              viewMode === 'grouped' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Layers className="h-4 w-4" />
+            מאוחד
+          </button>
+          <button
+            onClick={() => setViewMode('byCategory')}
+            className={`px-3 py-2 flex items-center gap-1 text-sm border-r ${
+              viewMode === 'byCategory' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <PieChart className="h-4 w-4" />
+            לפי קטגוריה
+          </button>
+        </div>
+
+        {/* Auto-categorize button */}
+        {uncategorizedCount > 0 && (
+          <button
+            onClick={handleAutoCategorize}
+            disabled={isAutoCategorizing}
+            className={`
+              px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium
+              transition-all
+              ${isAutoCategorizing
+                ? 'bg-purple-100 text-purple-400 cursor-not-allowed'
+                : 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm hover:shadow'
+              }
+            `}
+          >
+            {isAutoCategorizing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                מזהה עסקים...
+              </>
+            ) : (
+              <>
+                <Wand2 className="h-4 w-4" />
+                זהה וסווג אוטומטית ({uncategorizedCount})
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* Month Navigation */}
+      {availableMonths.length > 0 && (
+        <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={goToPrevMonth}
+              disabled={!selectedMonth && availableMonths.length === 0 || (selectedMonth !== '' && currentMonthIndex >= availableMonths.length - 1)}
+              className="p-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="חודש קודם"
+            >
+              <ChevronRight className="h-5 w-5 text-gray-600" />
+            </button>
+
+            <div className="flex items-center gap-2 min-w-[160px] justify-center">
+              <CalendarDays className="h-4 w-4 text-gray-500" />
+              {selectedMonth ? (
+                <span className="text-sm font-semibold text-gray-800">
+                  {getMonthLabel(selectedMonth)}
+                </span>
+              ) : (
+                <span className="text-sm font-semibold text-gray-800">
+                  כל החודשים
+                </span>
+              )}
+            </div>
+
+            <button
+              onClick={goToNextMonth}
+              disabled={!selectedMonth}
+              className="p-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="חודש הבא"
+            >
+              <ChevronLeft className="h-5 w-5 text-gray-600" />
+            </button>
+          </div>
+
+          {/* Quick month selector */}
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="text-sm px-3 py-1.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">כל החודשים</option>
+              {availableMonths.map(m => (
+                <option key={m} value={m}>
+                  {getMonthLabel(m)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {viewMode === 'list' ? (
+        /* List View - Table */
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">תאריך</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">תיאור</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">קטגוריה</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">חשבון</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">סכום</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredTransactions.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                    {transactions.length === 0
+                      ? 'אין תנועות להצגה. העלה קבצי תנועות כדי להתחיל.'
+                      : 'לא נמצאו תנועות התואמות לחיפוש'}
+                  </td>
+                </tr>
+              ) : (
+                filteredTransactions.map((tx) => {
+                  const amount = parseFloat(tx.amount);
+                  const isExpense = amount < 0;
+
+                  return (
+                    <tr key={tx.id} className="group hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {formatDate(tx.date)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-start gap-2">
+                          <button
+                            onClick={() => handleToggleRecurring(tx.id, !tx.isRecurring)}
+                            className={`mt-0.5 p-1 rounded hover:bg-gray-100 transition-colors flex-shrink-0 ${
+                              tx.isRecurring ? 'text-blue-600' : 'text-gray-300 hover:text-gray-500'
+                            }`}
+                            title={tx.isRecurring ? 'הוצאה קבועה — לחץ להסיר' : 'סמן כהוצאה קבועה'}
+                          >
+                            <Repeat className="h-4 w-4" />
+                          </button>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate max-w-[280px]">
+                              {tx.description}
+                            </p>
+                            {/* Inline note */}
+                            {editingNoteId === tx.id ? (
+                              <input
+                                type="text"
+                                value={noteValue}
+                                onChange={(e) => setNoteValue(e.target.value)}
+                                onBlur={() => handleNoteSave(tx.id)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleNoteSave(tx.id);
+                                  if (e.key === 'Escape') setEditingNoteId(null);
+                                }}
+                                className="mt-0.5 text-xs text-gray-500 border-b border-gray-300 focus:border-blue-500 outline-none w-full bg-transparent"
+                                autoFocus
+                                placeholder="הוסף הערה..."
+                              />
+                            ) : (
+                              <p
+                                className="mt-0.5 text-xs text-gray-400 cursor-pointer hover:text-gray-600 flex items-center gap-1"
+                                onClick={() => startEditingNote(tx.id, tx.notes)}
+                              >
+                                {tx.notes ? (
+                                  <>{tx.notes}</>
+                                ) : (
+                                  <span className="opacity-0 group-hover:opacity-100 hover:!opacity-100">
+                                    <MessageSquare className="h-3 w-3 inline" /> הוסף הערה
+                                  </span>
+                                )}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <CategorySelector
+                          transactionId={tx.id}
+                          transactionDescription={tx.description}
+                          currentCategory={tx.category}
+                          categories={categories as Category[]}
+                          onCategoryChange={handleCategoryChange}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-500">
+                        {tx.account.name}
+                      </td>
+                      <td className="px-4 py-3 text-left">
+                        <span className={`text-sm font-semibold ${isExpense ? 'text-red-600' : 'text-green-600'}`}>
+                          {isExpense ? '' : '+'}{formatCurrency(Math.abs(amount))}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : viewMode === 'grouped' ? (
+        /* Grouped View - By Description */
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">תיאור</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">כמות</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">קטגוריה</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">סה״כ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {groupedTransactions.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
+                    אין תנועות להצגה
+                  </td>
+                </tr>
+              ) : (
+                groupedTransactions.map((group) => {
+                  const isExpense = group.totalAmount < 0;
+
+                  return (
+                    <tr key={group.description} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <p className="text-sm font-medium text-gray-900 truncate max-w-[300px]">
+                          {group.description}
+                        </p>
+                        {group.count > 1 && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            {formatDate(group.dates[group.dates.length - 1])} - {formatDate(group.dates[0])}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {group.count > 1 ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                            <Layers className="h-3 w-3" />
+                            {group.count} עסקאות
+                          </span>
+                        ) : (
+                          <span className="text-sm text-gray-500">עסקה אחת</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <CategorySelector
+                          transactionId={group.firstTransactionId}
+                          transactionDescription={group.description}
+                          currentCategory={group.category}
+                          categories={categories as Category[]}
+                          onCategoryChange={handleCategoryChange}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-left">
+                        <span className={`text-sm font-semibold ${isExpense ? 'text-red-600' : 'text-green-600'}`}>
+                          {isExpense ? '' : '+'}{formatCurrency(Math.abs(group.totalAmount))}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        /* Category View */
+        <div className="p-4 space-y-4">
+          {sortedCategories.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              אין תנועות להצגה
+            </div>
+          ) : (
+            sortedCategories.map(([categoryKey, data]) => {
+              const isExpense = data.total < 0;
+              const isUncategorized = categoryKey === 'uncategorized';
+
+              return (
+                <div key={categoryKey} className="border rounded-lg overflow-hidden">
+                  {/* Category Header */}
+                  <div className={`p-4 flex items-center justify-between ${
+                    isUncategorized ? 'bg-orange-50' : 'bg-gray-50'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      {data.category ? (
+                        <span
+                          className="w-10 h-10 rounded-full flex items-center justify-center text-xl"
+                          style={{ backgroundColor: `${data.category.color}30` }}
+                        >
+                          {data.category.icon}
+                        </span>
+                      ) : (
+                        <span className="w-10 h-10 rounded-full flex items-center justify-center text-xl bg-orange-100">
+                          ❓
+                        </span>
+                      )}
+                      <div>
+                        <h3 className="font-semibold text-gray-900">
+                          {data.category?.name || 'לא מסווג'}
+                        </h3>
+                        <p className="text-sm text-gray-500">
+                          {data.transactions.length} תנועות
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-left">
+                      <p className={`text-xl font-bold ${isExpense ? 'text-red-600' : 'text-green-600'}`}>
+                        {isExpense ? '' : '+'}{formatCurrency(Math.abs(data.total))}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Transactions in this category */}
+                  <div className="divide-y divide-gray-100">
+                    {(expandedCategories.has(categoryKey)
+                      ? data.transactions
+                      : data.transactions.slice(0, 5)
+                    ).map(tx => {
+                      const amount = parseFloat(tx.amount);
+                      const txIsExpense = amount < 0;
+
+                      return (
+                        <div key={tx.id} className="px-4 py-2 flex items-center justify-between hover:bg-gray-50">
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm text-gray-400 w-20">
+                              {formatDate(tx.date)}
+                            </span>
+                            <span className="text-sm text-gray-700">
+                              {tx.description}
+                            </span>
+                            {isUncategorized && (
+                              <CategorySelector
+                                transactionId={tx.id}
+                                transactionDescription={tx.description}
+                                currentCategory={null}
+                                categories={categories as Category[]}
+                                onCategoryChange={handleCategoryChange}
+                              />
+                            )}
+                          </div>
+                          <span className={`text-sm font-medium ${txIsExpense ? 'text-red-600' : 'text-green-600'}`}>
+                            {txIsExpense ? '' : '+'}{formatCurrency(Math.abs(amount))}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {data.transactions.length > 5 && (
+                      <button
+                        onClick={() => toggleCategoryExpanded(categoryKey)}
+                        className="w-full px-4 py-2 text-center text-sm text-blue-600 hover:bg-blue-50 transition-colors flex items-center justify-center gap-1"
+                      >
+                        {expandedCategories.has(categoryKey) ? (
+                          <>
+                            <ChevronUp className="h-4 w-4" />
+                            הסתר
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="h-4 w-4" />
+                            + עוד {data.transactions.length - 5} תנועות
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* Summary */}
+      {filteredTransactions.length > 0 && (
+        <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
+          <span className="text-sm text-gray-600">
+            {filteredTransactions.length} תנועות
+            {filteredTransactions.filter(tx => !tx.categoryId).length > 0 && (
+              <span className="text-orange-600 mr-2">
+                ({filteredTransactions.filter(tx => !tx.categoryId).length} לא מסווגות)
+              </span>
+            )}
+          </span>
+          <div className="flex gap-6">
+            <span className="text-sm">
+              <span className="text-gray-500">סה״כ הוצאות: </span>
+              <span className="font-semibold text-red-600">
+                {formatCurrency(
+                  filteredTransactions
+                    .filter(tx => parseFloat(tx.amount) < 0)
+                    .reduce((sum, tx) => sum + Math.abs(parseFloat(tx.amount)), 0)
+                )}
+              </span>
+            </span>
+            <span className="text-sm">
+              <span className="text-gray-500">סה״כ הכנסות: </span>
+              <span className="font-semibold text-green-600">
+                {formatCurrency(
+                  filteredTransactions
+                    .filter(tx => parseFloat(tx.amount) > 0)
+                    .reduce((sum, tx) => sum + parseFloat(tx.amount), 0)
+                )}
+              </span>
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

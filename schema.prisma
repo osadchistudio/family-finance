@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// חשבון בנק או כרטיס אשראי
+model Account {
+  id          String      @id @default(uuid())
+  name        String      // שם החשבון (לדוגמה: "ישראכרט - 1234")
+  institution Institution
+  cardNumber  String?     // 4 ספרות אחרונות של הכרטיס (אופציונלי)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  transactions Transaction[]
+  fileUploads  FileUpload[]
+
+  @@unique([institution, cardNumber]) // מונע כפילות של אותו כרטיס
+  @@index([institution])
+}
+
+enum Institution {
+  BANK_HAPOALIM
+  BANK_LEUMI
+  ISRACARD
+  LEUMI_CARD
+  OTHER
+}
+
+// קובץ שהועלה
+model FileUpload {
+  id           String       @id @default(uuid())
+  accountId    String
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  filename     String
+  originalName String
+  rowCount     Int
+  status       UploadStatus @default(COMPLETED)
+  processedAt  DateTime     @default(now())
+
+  transactions Transaction[]
+
+  @@index([accountId, processedAt])
+}
+
+enum UploadStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// תנועה בודדת
+model Transaction {
+  id           String   @id @default(uuid())
+  accountId    String
+  account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  fileUploadId String?
+  fileUpload   FileUpload? @relation(fields: [fileUploadId], references: [id], onDelete: Cascade)
+
+  // נתוני התנועה
+  date         DateTime
+  valueDate    DateTime?
+  amount       Decimal  @db.Decimal(12, 2)
+  description  String
+  merchantName String?
+
+  // קטגוריזציה
+  categoryId        String?
+  category          Category? @relation(fields: [categoryId], references: [id])
+  isAutoCategorized Boolean   @default(false)
+
+  // מטא-דאטה
+  reference   String?
+  notes       String?
+  isExcluded  Boolean @default(false)
+  isRecurring Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([accountId, date, amount, description])
+  @@index([accountId, date])
+  @@index([categoryId])
+  @@index([date])
+}
+
+// קטגוריה
+model Category {
+  id        String       @id @default(uuid())
+  name      String       @unique // שם בעברית
+  nameEn    String?      // שם באנגלית
+  icon      String?      // אייקון (emoji או icon name)
+  color     String?      // צבע HEX
+  type      CategoryType
+  sortOrder Int          @default(0)
+
+  transactions Transaction[]
+  keywords     CategoryKeyword[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum CategoryType {
+  EXPENSE
+  INCOME
+  TRANSFER
+}
+
+// מילות מפתח לקטגוריזציה אוטומטית
+model CategoryKeyword {
+  id         String   @id @default(uuid())
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  keyword    String
+  isExact    Boolean  @default(false)
+  priority   Int      @default(0)
+
+  @@unique([categoryId, keyword])
+  @@index([keyword])
+}
+
+// מילות מפתח לזיהוי הוצאות קבועות
+model RecurringKeyword {
+  id        String   @id @default(uuid())
+  keyword   String   @unique
+  createdAt DateTime @default(now())
+
+  @@index([keyword])
+}
+
+// הגדרות מערכת
+model Setting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

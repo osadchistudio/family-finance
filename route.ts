@@ -88,9 +88,16 @@ export async function POST() {
     for (const tx of uncategorizedTransactions) {
       const categoryName = categorizations[tx.description];
       if (categoryName) {
-        const category = categories.find(c =>
-          c.name === categoryName || c.nameEn?.toLowerCase() === categoryName.toLowerCase()
-        );
+        // Improved matching: exact, normalized, or partial
+        const normalizedCategoryName = categoryName.trim().toLowerCase();
+        const category = categories.find(c => {
+          const nameMatch = c.name.toLowerCase() === normalizedCategoryName;
+          const nameEnMatch = c.nameEn?.toLowerCase() === normalizedCategoryName;
+          // Also check if the category name contains the returned value or vice versa
+          const partialMatch = c.name.toLowerCase().includes(normalizedCategoryName) ||
+                              normalizedCategoryName.includes(c.name.toLowerCase());
+          return nameMatch || nameEnMatch || partialMatch;
+        });
 
         if (category) {
           await prisma.transaction.update({
@@ -101,13 +108,19 @@ export async function POST() {
             },
           });
           categorizedCount++;
+          console.log(`✓ Categorized "${tx.description}" → "${category.name}"`);
 
           // Remember to add keyword
           const keyword = extractKeyword(tx.description);
           if (keyword && !keywordsToAdd.find(k => k.keyword === keyword && k.categoryId === category.id)) {
             keywordsToAdd.push({ categoryId: category.id, keyword });
           }
+        } else {
+          console.log(`✗ No match for "${tx.description}" - Claude said "${categoryName}" but no category found`);
+          console.log(`  Available categories: ${categories.map(c => c.name).join(', ')}`);
         }
+      } else {
+        console.log(`✗ Claude didn't categorize: "${tx.description}"`);
       }
     }
 
@@ -155,32 +168,36 @@ async function identifyWithClaude(
 
   const prompt = `אתה מומחה לזיהוי עסקים ישראליים וסיווגם לקטגוריות.
 
-הקטגוריות הזמינות הן: ${categoryList}
+הקטגוריות הזמינות הן (חובה להשתמש בשם המדויק!):
+${categories.map(c => `- "${c.name}"`).join('\n')}
 
 עבור כל תיאור עסקה, זהה את העסק וסווג אותו לקטגוריה המתאימה ביותר.
 
-הנחיות:
-- "תספורת", "מספרה", "ספר" = טיפוח אישי (או בריאות אם אין טיפוח)
-- חנות ספרים, ספרייה = חינוך
-- מסעדות, קפה, אוכל מוכן = מסעדות וקפה
-- סופרמרקט, מכולת = מכולת
-- דלק, תדלוק = דלק (או תחבורה)
-- נטפליקס, ספוטיפיי, אפליקציות = דיגיטל
-- ביגוד, נעליים = ביגוד והנעלה
+דוגמאות לסיווג:
+- העברות בנקאיות, זיכויים, הו"ק = "העברות"
+- תשלום ארנונה, עירייה = "חשבונות בית"
+- משכנתא, הלוואה = "חשבונות בית"
+- ביטוח לאומי = "ביטוח לאומי"
+- קניות בסופר = "מכולת"
+- מסעדה, קפה = "מסעדות וקפה"
+- דלק, חניה, רכבת = "תחבורה"
+- הכנסה ממשכורת = "הכנסות אחרות"
 
-החזר תשובה בפורמט JSON בלבד, ללא הסברים.
-תמיד נסה לסווג - עדיף לנחש קטגוריה קרובה מאשר לא לסווג בכלל.
+חשוב מאוד:
+1. השתמש בשם הקטגוריה המדויק מהרשימה למעלה (כולל גרשיים)
+2. תמיד נסה לסווג - עדיף לנחש קטגוריה קרובה מאשר לא לסווג
+3. החזר JSON בלבד, ללא טקסט נוסף
 
 תיאורי העסקאות:
-${descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
+${descriptions.map((d, i) => `${i + 1}. "${d}"`).join('\n')}
 
 החזר אובייקט JSON בפורמט:
 {
-  "תיאור העסקה המדויק כפי שמופיע למעלה": "שם הקטגוריה מהרשימה",
+  "תיאור העסקה המדויק": "שם הקטגוריה מהרשימה",
   ...
 }
 
-חשוב: השתמש בתיאור המדויק כ-key, לא במספר.`;
+חשוב: השתמש בתיאור המדויק כ-key (בלי המספר).`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {

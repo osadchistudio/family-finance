@@ -59,6 +59,11 @@ export function CategorySelector({
   useEffect(() => {
     if (isOpen) {
       calculatePosition();
+      // Prevent page scroll when dropdown opens
+      const scrollY = window.scrollY;
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollY);
+      });
     }
   }, [isOpen]);
 
@@ -133,6 +138,11 @@ export function CategorySelector({
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pr-8 pl-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               autoFocus
+              onFocus={(e) => {
+                // Prevent scroll on focus
+                e.preventDefault();
+                e.target.scrollIntoView = () => {};
+              }}
             />
           </div>
         </div>

@@ -38,6 +38,10 @@ export function CategorySelector({
   // Update dropdown position when opened
   useEffect(() => {
     if (isOpen && buttonRef.current) {
+      // Save scroll position before any DOM changes
+      const scrollY = window.scrollY;
+      const scrollX = window.scrollX;
+
       const rect = buttonRef.current.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
       const dropdownHeight = 350; // approximate max height
@@ -54,10 +58,11 @@ export function CategorySelector({
         zIndex: 50,
       });
 
-      // Focus search input without scrolling
-      setTimeout(() => {
+      // Restore scroll position and focus without scrolling
+      requestAnimationFrame(() => {
+        window.scrollTo(scrollX, scrollY);
         searchInputRef.current?.focus({ preventScroll: true });
-      }, 10);
+      });
     }
   }, [isOpen]);
 

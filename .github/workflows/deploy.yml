@@ -1,0 +1,32 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /root/family-finance
+            git pull
+            npm install
+            NODE_OPTIONS="--dns-result-order=ipv4first" npm run build
+            mkdir -p .next/standalone/.next/static
+            cp -r .next/static/* .next/standalone/.next/static/
+            cp -r public .next/standalone/public 2>/dev/null || true
+            cp .env .next/standalone/.env
+            pm2 stop family-finance 2>/dev/null || true
+            pm2 delete family-finance 2>/dev/null || true
+            cd .next/standalone
+            NODE_OPTIONS="--dns-result-order=ipv4first" pm2 start server.js --name "family-finance"
+            pm2 save

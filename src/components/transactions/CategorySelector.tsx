@@ -58,10 +58,19 @@ export function CategorySelector({
         zIndex: 50,
       });
 
-      // Restore scroll position and focus without scrolling
+      // Restore scroll position immediately and delay focus
+      window.scrollTo(scrollX, scrollY);
+
+      // Double requestAnimationFrame to ensure DOM is fully settled
       requestAnimationFrame(() => {
-        window.scrollTo(scrollX, scrollY);
-        searchInputRef.current?.focus({ preventScroll: true });
+        requestAnimationFrame(() => {
+          window.scrollTo(scrollX, scrollY);
+          if (searchInputRef.current) {
+            searchInputRef.current.focus({ preventScroll: true });
+            // One more scroll restore after focus
+            window.scrollTo(scrollX, scrollY);
+          }
+        });
       });
     }
   }, [isOpen]);

@@ -25,6 +25,45 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Full responsive/mobile layout pass across core screens
+Why:
+- The app was desktop-first and parts of the UI were hard to use on phones (fixed sidebar overlap, crowded filters, wide tables).
+- Needed a consistent mobile experience without breaking desktop workflows.
+
+What changed:
+- Reworked app shell for mobile:
+  - desktop keeps fixed right sidebar,
+  - mobile gets a fixed top bar with hamburger + slide-out drawer navigation.
+- Main layout spacing is now responsive (`pt-20` on mobile for top bar, desktop margin for sidebar), with horizontal overflow guarded.
+- Transactions screen mobile overhaul:
+  - filters and month controls now wrap/stack correctly,
+  - list and grouped views now have dedicated mobile card layouts,
+  - desktop tables remain for medium+ screens.
+- Category view rows and totals footer in transactions now wrap cleanly on narrow screens.
+- Recurring expenses rows/headers/footer now stack correctly on mobile and avoid text clipping.
+- Dashboard category pie section now stacks chart + legend on mobile.
+- Categories page header/actions and form action buttons now stack responsively.
+- Upload flow improved for mobile:
+  - smaller drop zone padding on small screens,
+  - action button rows stack on mobile,
+  - long uploaded file names now truncate safely.
+- Category icon grid and color picker behavior refined for mobile widths.
+
+Files touched:
+- `/src/app/layout.tsx`
+- `/src/components/Sidebar.tsx`
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/components/monthly-summary/MonthDetail.tsx`
+- `/src/components/recurring/RecurringExpensesList.tsx`
+- `/src/components/dashboard/CategoryPieChart.tsx`
+- `/src/components/upload/FileUploadZone.tsx`
+- `/src/app/categories/page.tsx`
+- `/src/app/page.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Recurring expenses page switched to monthly-obligations view
 Why:
 - The recurring expenses page summed every historical occurrence, which inflated totals and did not answer "how much fixed cost starts each month".

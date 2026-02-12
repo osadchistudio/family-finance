@@ -21,11 +21,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="he" dir="rtl">
-      <body className={`${rubik.variable} font-sans antialiased bg-gray-50`}>
-        <div className="flex min-h-screen">
+      <body className={`${rubik.variable} font-sans antialiased bg-gray-50 overflow-x-hidden`}>
+        <div className="min-h-screen">
           <Sidebar />
-          <main className="flex-1 p-6 mr-64">
-            <div className="max-w-[1700px]">
+          <main className="flex-1 p-4 sm:p-6 pt-20 lg:pt-6 lg:mr-64">
+            <div className="max-w-[1700px] mx-auto">
               {children}
             </div>
           </main>

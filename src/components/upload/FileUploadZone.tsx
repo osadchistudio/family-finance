@@ -193,7 +193,7 @@ export function FileUploadZone() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative border-2 border-dashed rounded-xl p-12 text-center transition-colors ${
+        className={`relative border-2 border-dashed rounded-xl p-6 sm:p-12 text-center transition-colors ${
           isDragging
             ? 'border-blue-500 bg-blue-50'
             : 'border-gray-300 bg-white hover:border-gray-400'
@@ -225,10 +225,10 @@ export function FileUploadZone() {
       </div>
 
       {/* Reset Database Button */}
-      <div className="flex justify-end">
+      <div className="flex justify-stretch sm:justify-end">
         <button
           onClick={() => setShowResetModal(true)}
-          className="flex items-center gap-2 px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
         >
           <Trash2 className="h-4 w-4" />
           מחיקת כל הנתונים
@@ -249,12 +249,12 @@ export function FileUploadZone() {
       {/* Upload Results */}
       {uploadResults.length > 0 && (
         <div className="space-y-3">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
             <h3 className="font-medium text-gray-700">תוצאות העלאה</h3>
             {!isAnyUploading && (
               <button
                 onClick={clearAllResults}
-                className="text-sm text-gray-500 hover:text-gray-700"
+                className="text-sm text-gray-500 hover:text-gray-700 self-end sm:self-auto"
               >
                 נקה הכל
               </button>
@@ -263,19 +263,19 @@ export function FileUploadZone() {
 
           {/* Action buttons after upload */}
           {!isAnyUploading && uploadResults.length > 0 && (
-            <div className="flex gap-3 mb-4">
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
               {hasSuccessfulUploads ? (
                 <>
                   <button
                     onClick={() => router.push('/')}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    className="w-full sm:flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
                   >
                     <BarChart3 className="h-5 w-5" />
                     צפה בדשבורד ({totalImported} תנועות חדשות)
                   </button>
                   <button
                     onClick={() => router.push('/transactions')}
-                    className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                   >
                     <ArrowLeft className="h-5 w-5" />
                     תנועות
@@ -301,7 +301,7 @@ export function FileUploadZone() {
               }`}
             >
               <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3 flex-1">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
                   {result.status === 'uploading' || result.status === 'pending' ? (
                     <Loader2 className="h-5 w-5 text-blue-500 animate-spin mt-0.5" />
                   ) : result.status === 'success' ? (
@@ -310,10 +310,10 @@ export function FileUploadZone() {
                     <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
                   )}
 
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <File className="h-4 w-4 text-gray-400" />
-                      <span className="font-medium text-gray-800">{result.fileName}</span>
+                      <span className="font-medium text-gray-800 truncate">{result.fileName}</span>
                     </div>
 
                     {result.status === 'uploading' && (

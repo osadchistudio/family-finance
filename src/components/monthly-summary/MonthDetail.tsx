@@ -163,57 +163,95 @@ export function MonthDetail({ data, categoryBreakdown, onBack }: MonthDetailProp
             אין תנועות בחודש זה
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-gray-500">
-                  <th className="text-right py-3 px-2 font-medium">תאריך</th>
-                  <th className="text-right py-3 px-2 font-medium">תיאור</th>
-                  <th className="text-right py-3 px-2 font-medium">קטגוריה</th>
-                  <th className="text-right py-3 px-2 font-medium">חשבון</th>
-                  <th className="text-left py-3 px-2 font-medium">סכום</th>
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.map((tx) => {
-                  const amount = parseFloat(tx.amount);
-                  return (
-                    <tr key={tx.id} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="py-3 px-2 text-gray-600">
-                        {formatDate(tx.date)}
-                      </td>
-                      <td className="py-3 px-2 text-gray-900 font-medium max-w-[200px] truncate">
-                        {tx.description}
-                      </td>
-                      <td className="py-3 px-2">
-                        {tx.category ? (
-                          <span
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
-                            style={{
-                              backgroundColor: tx.category.color + '20',
-                              color: tx.category.color,
-                            }}
-                          >
-                            {tx.category.icon} {tx.category.name}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 text-xs">ללא קטגוריה</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-2 text-gray-500 text-xs">
-                        {tx.account?.name || '-'}
-                      </td>
-                      <td className={`py-3 px-2 font-semibold text-left ${
-                        amount >= 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {formatCurrency(Math.abs(amount))}
-                        {amount >= 0 ? '+' : '-'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="space-y-3">
+            <div className="md:hidden space-y-2">
+              {transactions.map((tx) => {
+                const amount = parseFloat(tx.amount);
+                const isIncome = amount >= 0;
+
+                return (
+                  <div key={tx.id} className="border border-gray-100 rounded-lg p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 break-words">{tx.description}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{formatDate(tx.date)} · {tx.account?.name || '-'}</p>
+                      </div>
+                      <span className={`text-sm font-semibold whitespace-nowrap ${isIncome ? 'text-green-600' : 'text-red-600'}`}>
+                        {isIncome ? '+' : '-'}{formatCurrency(Math.abs(amount))}
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      {tx.category ? (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
+                          style={{
+                            backgroundColor: tx.category.color + '20',
+                            color: tx.category.color,
+                          }}
+                        >
+                          {tx.category.icon} {tx.category.name}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">ללא קטגוריה</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead>
+                  <tr className="border-b text-gray-500">
+                    <th className="text-right py-3 px-2 font-medium">תאריך</th>
+                    <th className="text-right py-3 px-2 font-medium">תיאור</th>
+                    <th className="text-right py-3 px-2 font-medium">קטגוריה</th>
+                    <th className="text-right py-3 px-2 font-medium">חשבון</th>
+                    <th className="text-left py-3 px-2 font-medium">סכום</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transactions.map((tx) => {
+                    const amount = parseFloat(tx.amount);
+                    return (
+                      <tr key={tx.id} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="py-3 px-2 text-gray-600">
+                          {formatDate(tx.date)}
+                        </td>
+                        <td className="py-3 px-2 text-gray-900 font-medium max-w-[200px] truncate">
+                          {tx.description}
+                        </td>
+                        <td className="py-3 px-2">
+                          {tx.category ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
+                              style={{
+                                backgroundColor: tx.category.color + '20',
+                                color: tx.category.color,
+                              }}
+                            >
+                              {tx.category.icon} {tx.category.name}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-xs">ללא קטגוריה</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-2 text-gray-500 text-xs">
+                          {tx.account?.name || '-'}
+                        </td>
+                        <td className={`py-3 px-2 font-semibold text-left ${
+                          amount >= 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {formatCurrency(Math.abs(amount))}
+                          {amount >= 0 ? '+' : '-'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

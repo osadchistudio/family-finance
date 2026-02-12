@@ -127,7 +127,7 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <h1 className="text-2xl font-bold text-gray-900">לוח בקרה</h1>
         <div className="text-sm text-gray-500 text-left">
           <p>{dayjs().format('DD/MM/YYYY')}</p>

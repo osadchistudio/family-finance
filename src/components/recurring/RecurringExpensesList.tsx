@@ -177,7 +177,7 @@ export function RecurringExpensesList({
       </div>
 
       <div className="bg-white rounded-xl shadow-sm">
-        <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
+        <div className="p-4 border-b bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <h2 className="font-semibold text-gray-900">פירוט התחייבויות קבועות חודשיות</h2>
           <span className="text-sm text-gray-600">{recurringItems.length} התחייבויות</span>
         </div>
@@ -197,8 +197,8 @@ export function RecurringExpensesList({
 
               return (
                 <div key={categoryKey} className="border rounded-lg overflow-hidden">
-                  <div className={`p-4 flex items-center justify-between ${isUncategorized ? 'bg-orange-50' : 'bg-gray-50'}`}>
-                    <div className="flex items-center gap-3">
+                  <div className={`p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${isUncategorized ? 'bg-orange-50' : 'bg-gray-50'}`}>
+                    <div className="flex items-center gap-3 min-w-0">
                       {data.category ? (
                         <span
                           className="w-10 h-10 rounded-full flex items-center justify-center text-xl"
@@ -211,31 +211,31 @@ export function RecurringExpensesList({
                           ❓
                         </span>
                       )}
-                      <div>
+                      <div className="min-w-0">
                         <h3 className="font-semibold text-gray-900">
                           {data.category?.name || 'לא מסווג'}
                         </h3>
                         <p className="text-sm text-gray-500">{data.items.length} התחייבויות קבועות</p>
                       </div>
                     </div>
-                    <div className="text-left">
+                    <div className="text-left self-end sm:self-auto">
                       <p className="text-xl font-bold text-red-600">{formatCurrency(data.total)}</p>
                     </div>
                   </div>
 
                   <div className="divide-y divide-gray-100">
                     {data.items.map((item) => (
-                      <div key={item.key} className="group px-4 py-3 flex items-start justify-between hover:bg-gray-50">
+                      <div key={item.key} className="group px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 hover:bg-gray-50">
                         <div className="flex items-start gap-3 flex-1 min-w-0">
                           <Repeat className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-gray-900 truncate">{item.description}</p>
+                            <p className="text-sm font-medium text-gray-900 break-words">{item.description}</p>
                             <p className="text-xs text-gray-500 mt-0.5">
                               חיוב אחרון: {formatDate(item.lastDate)} | הופיע {item.occurrences} פעמים בהיסטוריה
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3 flex-shrink-0">
+                        <div className="flex items-center gap-3 flex-shrink-0 self-end sm:self-auto">
                           <span className="text-sm font-semibold text-red-600">
                             {formatCurrency(item.amount)}
                           </span>
@@ -257,7 +257,7 @@ export function RecurringExpensesList({
         </div>
 
         {recurringItems.length > 0 && (
-          <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
+          <div className="p-4 border-t bg-gray-50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
             <span className="text-sm text-gray-600">{fixedCategoriesCount} קטגוריות קבועות</span>
             <span className="text-sm">
               <span className="text-gray-500">סה״כ התחייבות חודשית: </span>

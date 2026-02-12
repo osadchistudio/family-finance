@@ -291,7 +291,7 @@ export default function CategoriesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">קטגוריות</h1>
           <p className="text-gray-600 mt-1">
@@ -301,7 +301,7 @@ export default function CategoriesPage() {
         <button
           onClick={handleAdd}
           disabled={isAdding}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
         >
           <Plus className="h-5 w-5" />
           הוסף קטגוריה
@@ -639,7 +639,7 @@ function CategoryForm({ formData, setFormData, onSave, onCancel }: CategoryFormP
                   {filteredIconOptions.length === 0 ? (
                     <p className="text-sm text-gray-500 text-center py-4">לא נמצאו אייקונים</p>
                   ) : (
-                    <div className="grid grid-cols-8 gap-1">
+                    <div className="grid grid-cols-6 sm:grid-cols-8 gap-1">
                       {filteredIconOptions.map((option) => (
                         <button
                           key={`${option.icon}-${option.label}`}
@@ -691,7 +691,7 @@ function CategoryForm({ formData, setFormData, onSave, onCancel }: CategoryFormP
           </button>
 
           {showColorPicker && (
-            <div className="absolute z-10 mt-1 p-2 bg-white border border-gray-200 rounded-lg shadow-lg grid grid-cols-5 gap-1">
+            <div className="absolute right-0 z-10 mt-1 p-2 bg-white border border-gray-200 rounded-lg shadow-lg grid grid-cols-5 gap-1">
               {COLOR_OPTIONS.map((color) => (
                 <button
                   key={color}
@@ -722,17 +722,17 @@ function CategoryForm({ formData, setFormData, onSave, onCancel }: CategoryFormP
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2 justify-end">
+      <div className="flex flex-col-reverse sm:flex-row gap-2 justify-end">
         <button
           onClick={onCancel}
-          className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+          className="w-full sm:w-auto px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2"
         >
           <X className="h-4 w-4" />
           ביטול
         </button>
         <button
           onClick={onSave}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+          className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"
         >
           <Save className="h-4 w-4" />
           שמור

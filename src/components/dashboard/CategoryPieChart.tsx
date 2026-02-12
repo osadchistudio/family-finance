@@ -31,8 +31,8 @@ export function CategoryPieChart({ data }: CategoryPieChartProps) {
   return (
     <div className="bg-white rounded-xl shadow-sm p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">ממוצע הוצאות חודשי לפי קטגוריה</h3>
-      <div className="flex">
-        <div className="w-1/2" style={{ height: 256 }}>
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="w-full lg:w-1/2" style={{ height: 256 }}>
           <ResponsiveContainer width="100%" height={256}>
             <PieChart>
               <Pie
@@ -60,7 +60,7 @@ export function CategoryPieChart({ data }: CategoryPieChartProps) {
             </PieChart>
           </ResponsiveContainer>
         </div>
-        <div className="w-1/2 flex flex-col justify-center">
+        <div className="w-full lg:w-1/2 flex flex-col justify-center">
           <div className="space-y-2">
             {data.slice(0, 6).map((category, index) => (
               <div key={index} className="flex items-center justify-between">

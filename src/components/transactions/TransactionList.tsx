@@ -543,8 +543,8 @@ export function TransactionList({ transactions: initialTransactions, categories:
   return (
     <div className="bg-white rounded-xl shadow-sm">
       {/* Filters */}
-      <div className="p-4 border-b flex flex-wrap gap-4">
-        <div className="flex-1 min-w-[200px] relative">
+      <div className="p-4 border-b flex flex-wrap items-stretch gap-3">
+        <div className="w-full lg:flex-1 lg:min-w-[260px] relative">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
           {searchTerm.trim() && (
             <button
@@ -568,7 +568,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
             className="w-full pr-10 pl-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
-        <div className="min-w-[180px]">
+        <div className="w-full sm:w-[180px]">
           <select
             value={selectedAccount}
             onChange={(e) => setSelectedAccount(e.target.value)}
@@ -582,7 +582,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
             ))}
           </select>
         </div>
-        <div className="min-w-[180px]">
+        <div className="w-full sm:w-[180px]">
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
@@ -597,7 +597,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
             ))}
           </select>
         </div>
-        <div className="min-w-[170px]">
+        <div className="w-full sm:w-[170px]">
           <select
             value={selectedAmountType}
             onChange={(e) => setSelectedAmountType(e.target.value as AmountTypeFilter)}
@@ -610,10 +610,10 @@ export function TransactionList({ transactions: initialTransactions, categories:
         </div>
 
         {/* View mode toggle */}
-        <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+        <div className="w-full sm:w-auto grid grid-cols-3 rounded-lg border border-gray-300 overflow-hidden">
           <button
             onClick={() => setViewMode('list')}
-            className={`px-3 py-2 flex items-center gap-1 text-sm ${
+            className={`px-3 py-2 flex items-center justify-center gap-1 text-sm ${
               viewMode === 'list' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'
             }`}
           >
@@ -622,7 +622,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
           </button>
           <button
             onClick={() => setViewMode('grouped')}
-            className={`px-3 py-2 flex items-center gap-1 text-sm border-r ${
+            className={`px-3 py-2 flex items-center justify-center gap-1 text-sm border-r ${
               viewMode === 'grouped' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'
             }`}
           >
@@ -631,7 +631,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
           </button>
           <button
             onClick={() => setViewMode('byCategory')}
-            className={`px-3 py-2 flex items-center gap-1 text-sm border-r ${
+            className={`px-3 py-2 flex items-center justify-center gap-1 text-sm border-r ${
               viewMode === 'byCategory' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'
             }`}
           >
@@ -646,7 +646,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
             onClick={handleAutoCategorize}
             disabled={isAutoCategorizing}
             className={`
-              px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium
+              w-full sm:w-auto px-4 py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium
               transition-all
               ${isAutoCategorizing
                 ? 'bg-purple-100 text-purple-400 cursor-not-allowed'
@@ -672,8 +672,8 @@ export function TransactionList({ transactions: initialTransactions, categories:
 
       {/* Month Navigation */}
       {availableMonths.length > 0 && (
-        <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="px-4 py-3 border-b bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center justify-between sm:justify-start gap-2">
             <button
               onClick={goToPrevMonth}
               disabled={!selectedMonth && availableMonths.length === 0 || (selectedMonth !== '' && currentMonthIndex >= availableMonths.length - 1)}
@@ -683,7 +683,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
               <ChevronRight className="h-5 w-5 text-gray-600" />
             </button>
 
-            <div className="flex items-center gap-2 min-w-[160px] justify-center">
+            <div className="flex items-center gap-2 min-w-0 sm:min-w-[160px] justify-center flex-1 sm:flex-none">
               <CalendarDays className="h-4 w-4 text-gray-500" />
               {selectedMonth ? (
                 <span className="text-sm font-semibold text-gray-800">
@@ -707,11 +707,11 @@ export function TransactionList({ transactions: initialTransactions, categories:
           </div>
 
           {/* Quick month selector */}
-          <div className="flex items-center gap-2">
+          <div className="w-full sm:w-auto">
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="text-sm px-3 py-1.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full sm:w-auto text-sm px-3 py-1.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="">כל החודשים</option>
               {availableMonths.map(m => (
@@ -725,199 +725,346 @@ export function TransactionList({ transactions: initialTransactions, categories:
       )}
 
       {viewMode === 'list' ? (
-        /* List View - Table */
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">תאריך</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">תיאור</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">קטגוריה</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">חשבון</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">סכום</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">פעולות</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredTransactions.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                    {transactions.length === 0
-                      ? 'אין תנועות להצגה. העלה קבצי תנועות כדי להתחיל.'
-                      : 'לא נמצאו תנועות התואמות לחיפוש'}
-                  </td>
-                </tr>
-              ) : (
-                filteredTransactions.map((tx) => {
-                  const amount = parseFloat(tx.amount);
-                  const isExpense = amount < 0;
+        <>
+          <div className="md:hidden divide-y divide-gray-100">
+            {filteredTransactions.length === 0 ? (
+              <div className="px-4 py-8 text-center text-gray-500">
+                {transactions.length === 0
+                  ? 'אין תנועות להצגה. העלה קבצי תנועות כדי להתחיל.'
+                  : 'לא נמצאו תנועות התואמות לחיפוש'}
+              </div>
+            ) : (
+              filteredTransactions.map((tx) => {
+                const amount = parseFloat(tx.amount);
+                const isExpense = amount < 0;
 
-                  return (
-                    <tr key={tx.id} className="group hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {formatDate(tx.date)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-start gap-2">
-                          <button
-                            onClick={() => handleToggleRecurring(tx.id, !tx.isRecurring)}
-                            className={`mt-0.5 p-1 rounded hover:bg-gray-100 transition-colors flex-shrink-0 ${
-                              tx.isRecurring ? 'text-blue-600' : 'text-gray-300 hover:text-gray-500'
-                            }`}
-                            title={tx.isRecurring ? 'הוצאה קבועה — לחץ להסיר' : 'סמן כהוצאה קבועה'}
-                          >
-                            <Repeat className="h-4 w-4" />
-                          </button>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate max-w-[280px]">
-                              {tx.description}
-                            </p>
-                            {/* Inline note */}
-                            {editingNoteId === tx.id ? (
-                              <input
-                                type="text"
-                                value={noteValue}
-                                onChange={(e) => setNoteValue(e.target.value)}
-                                onBlur={() => handleNoteSave(tx.id)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleNoteSave(tx.id);
-                                  if (e.key === 'Escape') setEditingNoteId(null);
-                                }}
-                                className="mt-0.5 text-xs text-gray-500 border-b border-gray-300 focus:border-blue-500 outline-none w-full bg-transparent"
-                                autoFocus
-                                placeholder="הוסף הערה..."
-                              />
-                            ) : (
-                              <p
-                                className="mt-0.5 text-xs text-gray-400 cursor-pointer hover:text-gray-600 flex items-center gap-1"
-                                onClick={() => startEditingNote(tx.id, tx.notes)}
-                              >
-                                {tx.notes ? (
-                                  <>{tx.notes}</>
-                                ) : (
-                                  <span className="opacity-0 group-hover:opacity-100 hover:!opacity-100">
-                                    <MessageSquare className="h-3 w-3 inline" /> הוסף הערה
-                                  </span>
-                                )}
-                              </p>
-                            )}
-                          </div>
+                return (
+                  <div key={tx.id} className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2 min-w-0">
+                        <button
+                          onClick={() => handleToggleRecurring(tx.id, !tx.isRecurring)}
+                          className={`mt-0.5 p-1 rounded hover:bg-gray-100 transition-colors flex-shrink-0 ${
+                            tx.isRecurring ? 'text-blue-600' : 'text-gray-300 hover:text-gray-500'
+                          }`}
+                          title={tx.isRecurring ? 'הוצאה קבועה — לחץ להסיר' : 'סמן כהוצאה קבועה'}
+                        >
+                          <Repeat className="h-4 w-4" />
+                        </button>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 break-words">
+                            {tx.description}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {formatDate(tx.date)} · {tx.account.name}
+                          </p>
                         </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <CategorySelector
-                          transactionId={tx.id}
-                          transactionDescription={tx.description}
-                          currentCategory={tx.category}
-                          categories={categories as Category[]}
-                          onCategoryChange={handleCategoryChange}
+                      </div>
+                      <span className={`text-sm font-semibold whitespace-nowrap ${isExpense ? 'text-red-600' : 'text-green-600'}`}>
+                        {isExpense ? '' : '+'}{formatCurrency(Math.abs(amount))}
+                      </span>
+                    </div>
+
+                    <div>
+                      <CategorySelector
+                        transactionId={tx.id}
+                        transactionDescription={tx.description}
+                        currentCategory={tx.category}
+                        categories={categories as Category[]}
+                        onCategoryChange={handleCategoryChange}
+                      />
+                    </div>
+
+                    <div>
+                      {editingNoteId === tx.id ? (
+                        <input
+                          type="text"
+                          value={noteValue}
+                          onChange={(e) => setNoteValue(e.target.value)}
+                          onBlur={() => handleNoteSave(tx.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleNoteSave(tx.id);
+                            if (e.key === 'Escape') setEditingNoteId(null);
+                          }}
+                          className="text-xs text-gray-500 border-b border-gray-300 focus:border-blue-500 outline-none w-full bg-transparent py-1"
+                          autoFocus
+                          placeholder="הוסף הערה..."
                         />
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
-                        {tx.account.name}
-                      </td>
-                      <td className="px-4 py-3 text-left">
-                        <span className={`text-sm font-semibold ${isExpense ? 'text-red-600' : 'text-green-600'}`}>
-                          {isExpense ? '' : '+'}{formatCurrency(Math.abs(amount))}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => handleAutoCategorizeSingle(tx)}
-                            disabled={autoCategorizingTxId === tx.id || deletingTransactionId !== null}
-                            className="inline-flex p-1.5 rounded-md text-purple-500 hover:text-purple-700 hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                            title="AI: סווג רק את התנועה הזו"
-                          >
-                            {autoCategorizingTxId === tx.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Wand2 className="h-4 w-4" />
-                            )}
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTransaction(tx)}
-                            disabled={deletingTransactionId === tx.id || autoCategorizingTxId !== null}
-                            className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                            title="מחק תנועה"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      ) : viewMode === 'grouped' ? (
-        /* Grouped View - By Description */
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">תיאור</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">כמות</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">קטגוריה</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">סה״כ</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {groupedTransactions.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
-                    אין תנועות להצגה
-                  </td>
-                </tr>
-              ) : (
-                groupedTransactions.map((group) => {
-                  const isExpense = group.totalAmount < 0;
+                      ) : (
+                        <button
+                          onClick={() => startEditingNote(tx.id, tx.notes)}
+                          className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                          {tx.notes || 'הוסף הערה'}
+                        </button>
+                      )}
+                    </div>
 
-                  return (
-                    <tr key={group.description} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <p className="text-sm font-medium text-gray-900 truncate max-w-[300px]">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => handleAutoCategorizeSingle(tx)}
+                        disabled={autoCategorizingTxId === tx.id || deletingTransactionId !== null}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-purple-600 border border-purple-200 hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs"
+                        title="AI: סווג רק את התנועה הזו"
+                      >
+                        {autoCategorizingTxId === tx.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Wand2 className="h-4 w-4" />
+                        )}
+                        AI
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTransaction(tx)}
+                        disabled={deletingTransactionId === tx.id || autoCategorizingTxId !== null}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs"
+                        title="מחק תנועה"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        מחק
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full min-w-[900px]">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">תאריך</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">תיאור</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">קטגוריה</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">חשבון</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">סכום</th>
+                  <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">פעולות</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredTransactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                      {transactions.length === 0
+                        ? 'אין תנועות להצגה. העלה קבצי תנועות כדי להתחיל.'
+                        : 'לא נמצאו תנועות התואמות לחיפוש'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTransactions.map((tx) => {
+                    const amount = parseFloat(tx.amount);
+                    const isExpense = amount < 0;
+
+                    return (
+                      <tr key={tx.id} className="group hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {formatDate(tx.date)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-start gap-2">
+                            <button
+                              onClick={() => handleToggleRecurring(tx.id, !tx.isRecurring)}
+                              className={`mt-0.5 p-1 rounded hover:bg-gray-100 transition-colors flex-shrink-0 ${
+                                tx.isRecurring ? 'text-blue-600' : 'text-gray-300 hover:text-gray-500'
+                              }`}
+                              title={tx.isRecurring ? 'הוצאה קבועה — לחץ להסיר' : 'סמן כהוצאה קבועה'}
+                            >
+                              <Repeat className="h-4 w-4" />
+                            </button>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate max-w-[280px]">
+                                {tx.description}
+                              </p>
+                              {editingNoteId === tx.id ? (
+                                <input
+                                  type="text"
+                                  value={noteValue}
+                                  onChange={(e) => setNoteValue(e.target.value)}
+                                  onBlur={() => handleNoteSave(tx.id)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleNoteSave(tx.id);
+                                    if (e.key === 'Escape') setEditingNoteId(null);
+                                  }}
+                                  className="mt-0.5 text-xs text-gray-500 border-b border-gray-300 focus:border-blue-500 outline-none w-full bg-transparent"
+                                  autoFocus
+                                  placeholder="הוסף הערה..."
+                                />
+                              ) : (
+                                <p
+                                  className="mt-0.5 text-xs text-gray-400 cursor-pointer hover:text-gray-600 flex items-center gap-1"
+                                  onClick={() => startEditingNote(tx.id, tx.notes)}
+                                >
+                                  {tx.notes ? (
+                                    <>{tx.notes}</>
+                                  ) : (
+                                    <span className="opacity-0 group-hover:opacity-100 hover:!opacity-100">
+                                      <MessageSquare className="h-3 w-3 inline" /> הוסף הערה
+                                    </span>
+                                  )}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <CategorySelector
+                            transactionId={tx.id}
+                            transactionDescription={tx.description}
+                            currentCategory={tx.category}
+                            categories={categories as Category[]}
+                            onCategoryChange={handleCategoryChange}
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {tx.account.name}
+                        </td>
+                        <td className="px-4 py-3 text-left">
+                          <span className={`text-sm font-semibold ${isExpense ? 'text-red-600' : 'text-green-600'}`}>
+                            {isExpense ? '' : '+'}{formatCurrency(Math.abs(amount))}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => handleAutoCategorizeSingle(tx)}
+                              disabled={autoCategorizingTxId === tx.id || deletingTransactionId !== null}
+                              className="inline-flex p-1.5 rounded-md text-purple-500 hover:text-purple-700 hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                              title="AI: סווג רק את התנועה הזו"
+                            >
+                              {autoCategorizingTxId === tx.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Wand2 className="h-4 w-4" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTransaction(tx)}
+                              disabled={deletingTransactionId === tx.id || autoCategorizingTxId !== null}
+                              className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                              title="מחק תנועה"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : viewMode === 'grouped' ? (
+        <>
+          <div className="md:hidden divide-y divide-gray-100">
+            {groupedTransactions.length === 0 ? (
+              <div className="px-4 py-8 text-center text-gray-500">
+                אין תנועות להצגה
+              </div>
+            ) : (
+              groupedTransactions.map((group) => {
+                const isExpense = group.totalAmount < 0;
+
+                return (
+                  <div key={group.description} className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 break-words">
                           {group.description}
                         </p>
-                        {group.count > 1 && (
-                          <p className="text-xs text-gray-400 mt-1">
-                            {formatDate(group.dates[group.dates.length - 1])} - {formatDate(group.dates[0])}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
                         {group.count > 1 ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
-                            <Layers className="h-3 w-3" />
-                            {group.count} עסקאות
-                          </span>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {group.count} עסקאות · {formatDate(group.dates[group.dates.length - 1])} - {formatDate(group.dates[0])}
+                          </p>
                         ) : (
-                          <span className="text-sm text-gray-500">עסקה אחת</span>
+                          <p className="text-xs text-gray-500 mt-0.5">עסקה אחת</p>
                         )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <CategorySelector
-                          transactionId={group.firstTransactionId}
-                          transactionDescription={group.description}
-                          currentCategory={group.category}
-                          categories={categories as Category[]}
-                          onCategoryChange={handleCategoryChange}
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-left">
-                        <span className={`text-sm font-semibold ${isExpense ? 'text-red-600' : 'text-green-600'}`}>
-                          {isExpense ? '' : '+'}{formatCurrency(Math.abs(group.totalAmount))}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                      </div>
+                      <span className={`text-sm font-semibold whitespace-nowrap ${isExpense ? 'text-red-600' : 'text-green-600'}`}>
+                        {isExpense ? '' : '+'}{formatCurrency(Math.abs(group.totalAmount))}
+                      </span>
+                    </div>
+                    <CategorySelector
+                      transactionId={group.firstTransactionId}
+                      transactionDescription={group.description}
+                      currentCategory={group.category}
+                      categories={categories as Category[]}
+                      onCategoryChange={handleCategoryChange}
+                    />
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full min-w-[760px]">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">תיאור</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">כמות</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">קטגוריה</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">סה״כ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {groupedTransactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
+                      אין תנועות להצגה
+                    </td>
+                  </tr>
+                ) : (
+                  groupedTransactions.map((group) => {
+                    const isExpense = group.totalAmount < 0;
+
+                    return (
+                      <tr key={group.description} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-medium text-gray-900 truncate max-w-[300px]">
+                            {group.description}
+                          </p>
+                          {group.count > 1 && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              {formatDate(group.dates[group.dates.length - 1])} - {formatDate(group.dates[0])}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {group.count > 1 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                              <Layers className="h-3 w-3" />
+                              {group.count} עסקאות
+                            </span>
+                          ) : (
+                            <span className="text-sm text-gray-500">עסקה אחת</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <CategorySelector
+                            transactionId={group.firstTransactionId}
+                            transactionDescription={group.description}
+                            currentCategory={group.category}
+                            categories={categories as Category[]}
+                            onCategoryChange={handleCategoryChange}
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-left">
+                          <span className={`text-sm font-semibold ${isExpense ? 'text-red-600' : 'text-green-600'}`}>
+                            {isExpense ? '' : '+'}{formatCurrency(Math.abs(group.totalAmount))}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       ) : (
         /* Category View */
         <div className="p-4 space-y-4">
@@ -975,12 +1122,12 @@ export function TransactionList({ transactions: initialTransactions, categories:
                       const txIsExpense = amount < 0;
 
                       return (
-                        <div key={tx.id} className="px-4 py-2 flex items-center justify-between hover:bg-gray-50">
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm text-gray-400 w-20">
+                        <div key={tx.id} className="px-4 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 hover:bg-gray-50">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                            <span className="text-xs sm:text-sm text-gray-400">
                               {formatDate(tx.date)}
                             </span>
-                            <span className="text-sm text-gray-700">
+                            <span className="text-sm text-gray-700 break-words">
                               {tx.description}
                             </span>
                             {isUncategorized && (
@@ -993,7 +1140,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
                               />
                             )}
                           </div>
-                          <span className={`text-sm font-medium ${txIsExpense ? 'text-red-600' : 'text-green-600'}`}>
+                          <span className={`text-sm font-medium self-end sm:self-auto ${txIsExpense ? 'text-red-600' : 'text-green-600'}`}>
                             {txIsExpense ? '' : '+'}{formatCurrency(Math.abs(amount))}
                           </span>
                         </div>
@@ -1027,7 +1174,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
 
       {/* Summary */}
       {filteredTransactions.length > 0 && (
-        <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
+        <div className="p-4 border-t bg-gray-50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
           <span className="text-sm text-gray-600">
             {filteredTransactions.length} תנועות
             {filteredTransactions.filter(tx => !tx.categoryId).length > 0 && (
@@ -1036,7 +1183,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
               </span>
             )}
           </span>
-          <div className="flex gap-6">
+          <div className="flex flex-wrap gap-4 sm:gap-6">
             <span className="text-sm">
               <span className="text-gray-500">סה״כ הוצאות: </span>
               <span className="font-semibold text-red-600">

@@ -62,6 +62,31 @@ interface GroupedTransaction {
   dates: string[];
 }
 
+const AMOUNT_MATCH_EPSILON = 0.01;
+
+function parseAmountSearchTerm(searchTerm: string): number | null {
+  const trimmed = searchTerm.trim();
+  if (!trimmed || !/\d/.test(trimmed)) return null;
+
+  // If query contains letters, treat it as text search only.
+  if (/[A-Za-z\u0590-\u05FF]/.test(trimmed)) return null;
+
+  const normalized = trimmed
+    .replace(/[₪,\s]/g, '')
+    .replace(/[()]/g, '')
+    .replace(/^\+/, '');
+
+  const parsed = Math.abs(parseFloat(normalized));
+  if (!Number.isFinite(parsed) || parsed === 0) return null;
+  return parsed;
+}
+
+function matchesExpenseAmount(amount: string, searchAmount: number): boolean {
+  const numericAmount = parseFloat(amount);
+  if (!Number.isFinite(numericAmount) || numericAmount >= 0) return false;
+  return Math.abs(Math.abs(numericAmount) - searchAmount) < AMOUNT_MATCH_EPSILON;
+}
+
 export function TransactionList({ transactions: initialTransactions, categories, accounts }: TransactionListProps) {
   const [transactions, setTransactions] = useState(initialTransactions);
   const [searchTerm, setSearchTerm] = useState('');
@@ -125,9 +150,13 @@ export function TransactionList({ transactions: initialTransactions, categories,
   };
 
   const uncategorizedCount = transactions.filter(tx => !tx.categoryId).length;
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+  const amountSearch = parseAmountSearchTerm(searchTerm);
 
   const filteredTransactions = transactions.filter(tx => {
-    const matchesSearch = tx.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesTextSearch = !normalizedSearchTerm || tx.description.toLowerCase().includes(normalizedSearchTerm);
+    const matchesAmountSearch = amountSearch !== null && matchesExpenseAmount(tx.amount, amountSearch);
+    const matchesSearch = !normalizedSearchTerm || matchesTextSearch || matchesAmountSearch;
     const matchesCategory = !selectedCategory ||
       (selectedCategory === 'uncategorized' ? !tx.categoryId : tx.categoryId === selectedCategory);
     const matchesAccount = !selectedAccount || tx.account.id === selectedAccount;
@@ -352,7 +381,7 @@ export function TransactionList({ transactions: initialTransactions, categories,
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
           <input
             type="text"
-            placeholder="חיפוש תנועות..."
+            placeholder="חיפוש תנועות או סכום..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pr-10 pl-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"

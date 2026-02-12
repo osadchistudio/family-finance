@@ -13,6 +13,24 @@ import { BankHapoalimPdfParser } from './BankHapoalimPdfParser';
 dayjs.extend(customParseFormat);
 
 export class FileParserService {
+  private static CARD_BILL_KEYWORDS = [
+    'מסטרקרד',
+    'מסטרקארד',
+    'מאסטרקארד',
+    'mastercard',
+    'ישראכרט',
+    'isracard',
+    'לאומיקארד',
+    'leumicard',
+    'מקס',
+    'max',
+    'ויזהכאל',
+    'visa',
+    'amex',
+    'כרטיסאשראי',
+    'חיובכרטיס',
+  ];
+
   /**
    * Auto-detect institution from file content
    */
@@ -315,6 +333,16 @@ export class FileParserService {
     return FileParserService.SUMMARY_PATTERNS.some(p => p.test(description.trim()));
   }
 
+  private isConsolidatedCardCharge(description: string, amount: number, isCreditCard: boolean): boolean {
+    if (isCreditCard || amount >= 0) return false;
+
+    const normalizedDescription = description
+      .toLowerCase()
+      .replace(/[^\u0590-\u05FFa-z]/g, '');
+
+    return FileParserService.CARD_BILL_KEYWORDS.some(keyword => normalizedDescription.includes(keyword));
+  }
+
   private parseTransactionSmart(
     row: Record<string, unknown>,
     columns: DetectedColumns,
@@ -353,6 +381,7 @@ export class FileParserService {
     }
 
     if (amount === 0) return null;
+    if (this.isConsolidatedCardCharge(description, amount, isCreditCard)) return null;
 
     // Build transaction
     const transaction: ParsedTransaction = {

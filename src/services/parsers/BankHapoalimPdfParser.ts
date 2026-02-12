@@ -16,6 +16,24 @@ export interface PdfParseResult {
 }
 
 export class BankHapoalimPdfParser {
+  private static CARD_BILL_KEYWORDS = [
+    'מסטרקרד',
+    'מסטרקארד',
+    'מאסטרקארד',
+    'mastercard',
+    'ישראכרט',
+    'isracard',
+    'לאומיקארד',
+    'leumicard',
+    'מקס',
+    'max',
+    'ויזהכאל',
+    'visa',
+    'amex',
+    'כרטיסאשראי',
+    'חיובכרטיס',
+  ];
+
   /**
    * Parse Bank Hapoalim PDF statement
    */
@@ -125,6 +143,10 @@ export class BankHapoalimPdfParser {
         amount = -amountValue;
       }
 
+      if (this.isConsolidatedCardCharge(description, amount)) {
+        continue;
+      }
+
       const key = `${date}-${description}-${amountValue}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -133,6 +155,18 @@ export class BankHapoalimPdfParser {
     }
 
     return transactions;
+  }
+
+  private isConsolidatedCardCharge(description: string, amount: number): boolean {
+    if (amount >= 0) return false;
+
+    const normalizedDescription = description
+      .toLowerCase()
+      .replace(/[^\u0590-\u05FFa-z]/g, '');
+
+    return BankHapoalimPdfParser.CARD_BILL_KEYWORDS.some(keyword =>
+      normalizedDescription.includes(keyword)
+    );
   }
 
   /**

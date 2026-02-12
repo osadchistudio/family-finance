@@ -25,6 +25,21 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Numeric search now matches both income and expense amounts
+Why:
+- Numeric search previously matched only expenses and missed matching income rows with the same amount.
+
+What changed:
+- Transactions numeric search now matches by absolute amount for both expenses and incomes.
+- Existing rounded-display matching behavior remains (whole-number search matches rounded UI value).
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Remove consolidated-card bulk delete button from transactions UI
 Why:
 - After one-time cleanup, the extra bulk-delete button was no longer needed and took space in the filters row.

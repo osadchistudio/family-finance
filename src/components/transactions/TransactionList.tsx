@@ -98,9 +98,9 @@ function parseAmountSearchTerm(searchTerm: string): ParsedAmountSearch | null {
   };
 }
 
-function matchesExpenseAmount(amount: string, search: ParsedAmountSearch): boolean {
+function matchesAmountValue(amount: string, search: ParsedAmountSearch): boolean {
   const numericAmount = parseFloat(amount);
-  if (!Number.isFinite(numericAmount) || numericAmount >= 0) return false;
+  if (!Number.isFinite(numericAmount)) return false;
 
   const absoluteAmount = Math.abs(numericAmount);
 
@@ -223,7 +223,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const filteredTransactions = transactions.filter(tx => {
     const txAmount = parseFloat(tx.amount);
     const matchesTextSearch = !normalizedSearchTerm || tx.description.toLowerCase().includes(normalizedSearchTerm);
-    const matchesAmountSearch = amountSearch !== null && matchesExpenseAmount(tx.amount, amountSearch);
+    const matchesAmountSearch = amountSearch !== null && matchesAmountValue(tx.amount, amountSearch);
     const matchesSearch = !normalizedSearchTerm || matchesTextSearch || matchesAmountSearch;
     const matchesCategory = !selectedCategory ||
       (selectedCategory === 'uncategorized' ? !tx.categoryId : tx.categoryId === selectedCategory);

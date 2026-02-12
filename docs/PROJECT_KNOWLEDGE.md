@@ -25,6 +25,25 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Sharpened single-transaction AI categorization logic
+Why:
+- Per-transaction AI re-check could confirm an existing wrong category due dependency on previously learned keywords.
+- Example observed: "תמנון" should map to clothing category, not restaurants.
+
+What changed:
+- Single-transaction AI flow now runs with keyword-fallback disabled (it no longer trusts existing learned keywords for this specific action).
+- Added explicit "תמנון" mapping to clothing in heuristic rules.
+- Strengthened Claude prompt with explicit guidance that "תמנון" belongs to clothing.
+- If AI returns the same category, response message now states that an AI check was performed (not just "already assigned").
+
+Files touched:
+- `/src/lib/autoCategorize.ts`
+- `/src/app/api/transactions/[id]/auto-categorize/route.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Search clear button + AI button visible on every transaction row
 Why:
 - Users needed one-click clearing of search input without selecting text manually.

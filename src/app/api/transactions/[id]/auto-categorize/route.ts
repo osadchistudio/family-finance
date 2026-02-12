@@ -44,7 +44,8 @@ export async function POST(
     const categorizations = await identifyDescriptions(
       [transaction.description],
       categories,
-      anthropicKey
+      anthropicKey,
+      { includeKeywordFallback: false }
     );
 
     const categoryName = categorizations[transaction.description];
@@ -69,7 +70,7 @@ export async function POST(
       return NextResponse.json({
         success: true,
         categorized: false,
-        message: 'התנועה כבר משויכת לקטגוריה הזו',
+        message: 'בוצעה בדיקת AI והתנועה כבר משויכת לקטגוריה המתאימה',
         category: {
           id: category.id,
           name: category.name,

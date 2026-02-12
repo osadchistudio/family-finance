@@ -10,6 +10,11 @@ export interface AutoCategorizeCategory {
   keywords: { keyword: string }[];
 }
 
+export interface IdentifyDescriptionsOptions {
+  // When false, do not map using existing learned keywords (safer for re-check of single row).
+  includeKeywordFallback?: boolean;
+}
+
 export async function resolveAnthropicApiKey(): Promise<string | null> {
   let anthropicKey: string | null = null;
 
@@ -34,15 +39,17 @@ export async function resolveAnthropicApiKey(): Promise<string | null> {
 export async function identifyDescriptions(
   descriptions: string[],
   categories: AutoCategorizeCategory[],
-  apiKey: string | null
+  apiKey: string | null,
+  options: IdentifyDescriptionsOptions = {}
 ): Promise<Record<string, string>> {
   if (descriptions.length === 0) return {};
+  const { includeKeywordFallback = true } = options;
 
   if (apiKey) {
     return identifyWithClaude(descriptions, categories, apiKey);
   }
 
-  return identifyWithHeuristics(descriptions, categories);
+  return identifyWithHeuristics(descriptions, categories, includeKeywordFallback);
 }
 
 export function findCategoryByName(
@@ -83,6 +90,7 @@ async function identifyWithClaude(
 
 הנחיות:
 - "תספורת", "מספרה", "ספר" = טיפוח אישי (או בריאות אם אין טיפוח)
+- "תמנון" = ביגוד והנעלה
 - חנות ספרים, ספרייה = חינוך
 - מסעדות, קפה, אוכל מוכן = מסעדות וקפה
 - סופרמרקט, מכולת = מכולת
@@ -142,7 +150,8 @@ ${descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
 
 async function identifyWithHeuristics(
   descriptions: string[],
-  categories: { name: string; keywords: { keyword: string }[] }[]
+  categories: { name: string; keywords: { keyword: string }[] }[],
+  includeKeywordFallback: boolean
 ): Promise<Record<string, string>> {
   const result: Record<string, string> = {};
 
@@ -157,6 +166,8 @@ async function identifyWithHeuristics(
     'אדידס': 'ביגוד והנעלה',
     'טרמינל': 'ביגוד והנעלה',
     'shein': 'ביגוד והנעלה',
+    'תמנון': 'ביגוד והנעלה',
+    'tamnun': 'ביגוד והנעלה',
     'שופרסל': 'מכולת',
     'רמי לוי': 'מכולת',
     'מגה': 'מכולת',
@@ -189,7 +200,7 @@ async function identifyWithHeuristics(
       }
     }
 
-    if (!result[desc]) {
+    if (!result[desc] && includeKeywordFallback) {
       for (const cat of categories) {
         for (const kw of cat.keywords) {
           if (lowerDesc.includes(kw.keyword.toLowerCase())) {

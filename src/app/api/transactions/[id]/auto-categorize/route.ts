@@ -66,22 +66,31 @@ export async function POST(
       });
     }
 
-    if (transaction.categoryId === category.id) {
-      return NextResponse.json({
-        success: true,
-        categorized: false,
-        message: 'בוצעה בדיקת AI והתנועה כבר משויכת לקטגוריה המתאימה',
-        category: {
-          id: category.id,
-          name: category.name,
-          icon: category.icon || '📁',
-          color: category.color || '#6B7280',
+    let currentUpdated = 0;
+    if (transaction.categoryId !== category.id) {
+      await prisma.transaction.update({
+        where: { id: transaction.id },
+        data: {
+          categoryId: category.id,
+          isAutoCategorized: true,
         },
       });
+      currentUpdated = 1;
     }
 
-    await prisma.transaction.update({
-      where: { id: transaction.id },
+    // Propagate AI result to identical transactions (same description),
+    // matching the manual behavior for consistency.
+    const similarResult = await prisma.transaction.updateMany({
+      where: {
+        id: { not: transaction.id },
+        description: {
+          equals: transaction.description,
+          mode: 'insensitive',
+        },
+        NOT: {
+          categoryId: category.id,
+        },
+      },
       data: {
         categoryId: category.id,
         isAutoCategorized: true,
@@ -104,16 +113,22 @@ export async function POST(
       }
     }
 
+    const categorized = currentUpdated > 0 || similarResult.count > 0;
+
     return NextResponse.json({
       success: true,
-      categorized: true,
+      categorized,
       transactionId: transaction.id,
+      updatedSimilar: similarResult.count,
       category: {
         id: category.id,
         name: category.name,
         icon: category.icon || '📁',
         color: category.color || '#6B7280',
       },
+      message: categorized
+        ? null
+        : 'בוצעה בדיקת AI והתנועה כבר משויכת לקטגוריה המתאימה',
       keywordAdded: keyword?.toLowerCase() || null,
     });
   } catch (error) {

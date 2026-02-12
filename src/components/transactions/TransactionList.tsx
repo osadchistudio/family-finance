@@ -489,18 +489,36 @@ export function TransactionList({ transactions: initialTransactions, categories:
           color: string;
         };
 
-        setTransactions(prev => prev.map(item => (
-          item.id === tx.id
-            ? {
-                ...item,
-                categoryId: category.id,
-                category,
-                isAutoCategorized: true,
-              }
-            : item
-        )));
+        const sourceDescription = tx.description.toLowerCase().trim();
+        const updatedSimilar = Number(result.updatedSimilar || 0);
 
-        showToast(`סווג אוטומטית ל"${category.name}"`, 'learning');
+        setTransactions(prev => prev.map(item => {
+          if (item.id === tx.id) {
+            return {
+              ...item,
+              categoryId: category.id,
+              category,
+              isAutoCategorized: true,
+            };
+          }
+
+          if (updatedSimilar > 0 && item.description.toLowerCase().trim() === sourceDescription) {
+            return {
+              ...item,
+              categoryId: category.id,
+              category,
+              isAutoCategorized: true,
+            };
+          }
+
+          return item;
+        }));
+
+        if (updatedSimilar > 0) {
+          showToast(`סווג אוטומטית ל"${category.name}" ועודכנו גם ${updatedSimilar} תנועות זהות`, 'learning');
+        } else {
+          showToast(`סווג אוטומטית ל"${category.name}"`, 'learning');
+        }
       } else {
         showToast(result.message || 'לא נמצאה קטגוריה מתאימה', 'info');
       }

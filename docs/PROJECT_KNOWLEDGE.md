@@ -25,6 +25,23 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Single-transaction AI now propagates to identical transactions
+Why:
+- Users expected per-transaction AI categorization to behave like manual category change and update identical transactions too.
+
+What changed:
+- In single-transaction AI endpoint, after selecting a category, the system now updates all transactions with the same description (case-insensitive) to that category.
+- Endpoint now returns `updatedSimilar` count.
+- Transactions UI now applies this propagated update immediately in local state and shows a toast with the count.
+
+Files touched:
+- `/src/app/api/transactions/[id]/auto-categorize/route.ts`
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Sharpened single-transaction AI categorization logic
 Why:
 - Per-transaction AI re-check could confirm an existing wrong category due dependency on previously learned keywords.

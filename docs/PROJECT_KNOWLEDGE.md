@@ -25,6 +25,28 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Optional "update similar transactions" toggle on manual category change
+Why:
+- Automatic propagation by identical description is useful in many cases, but can be wrong for generic descriptions (e.g., transfers with different business meaning).
+- Users needed explicit control to update only the current row when required.
+
+What changed:
+- Category selector now includes a second checkbox:
+  - `עדכן תנועות זהות`
+- When checked: behavior stays the same and updates identical transactions.
+- When unchecked: category update applies only to the selected transaction.
+- API endpoint accepts and respects new flag:
+  - `applyToSimilar` (default `true`)
+
+Files touched:
+- `/src/components/transactions/CategorySelector.tsx`
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/app/api/transactions/[id]/category/route.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Single-transaction AI now propagates to identical transactions
 Why:
 - Users expected per-transaction AI categorization to behave like manual category change and update identical transactions too.

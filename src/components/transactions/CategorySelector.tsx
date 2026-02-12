@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Check, Sparkles, Search } from 'lucide-react';
+import { ChevronDown, Check, Sparkles, Search, Copy } from 'lucide-react';
 
 interface Category {
   id: string;
@@ -16,7 +16,12 @@ interface CategorySelectorProps {
   transactionDescription: string;
   currentCategory: Category | null;
   categories: Category[];
-  onCategoryChange: (transactionId: string, categoryId: string, learnFromThis: boolean) => void;
+  onCategoryChange: (
+    transactionId: string,
+    categoryId: string,
+    learnFromThis: boolean,
+    applyToSimilar: boolean
+  ) => void;
 }
 
 export function CategorySelector({
@@ -28,6 +33,7 @@ export function CategorySelector({
 }: CategorySelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [learnFromThis, setLearnFromThis] = useState(true);
+  const [applyToSimilar, setApplyToSimilar] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -95,7 +101,7 @@ export function CategorySelector({
 
     setIsUpdating(true);
     try {
-      await onCategoryChange(transactionId, categoryId, learnFromThis);
+      await onCategoryChange(transactionId, categoryId, learnFromThis, applyToSimilar);
     } finally {
       setIsUpdating(false);
       setIsOpen(false);
@@ -137,8 +143,8 @@ export function CategorySelector({
           </div>
         </div>
 
-        {/* Learn checkbox */}
-        <div className="p-2 bg-blue-50 border-b">
+        {/* Options */}
+        <div className="p-2 bg-blue-50 border-b space-y-2">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -149,6 +155,18 @@ export function CategorySelector({
             <span className="text-xs text-blue-700 flex items-center gap-1">
               <Sparkles className="h-3 w-3" />
               למד מהשיוך הזה
+            </span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={applyToSimilar}
+              onChange={(e) => setApplyToSimilar(e.target.checked)}
+              className="rounded text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-xs text-blue-700 flex items-center gap-1">
+              <Copy className="h-3 w-3" />
+              עדכן תנועות זהות
             </span>
           </label>
         </div>

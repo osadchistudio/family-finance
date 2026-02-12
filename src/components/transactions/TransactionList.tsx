@@ -322,12 +322,17 @@ export function TransactionList({ transactions: initialTransactions, categories:
     }
   };
 
-  const handleCategoryChange = async (transactionId: string, categoryId: string, learnFromThis: boolean) => {
+  const handleCategoryChange = async (
+    transactionId: string,
+    categoryId: string,
+    learnFromThis: boolean,
+    applyToSimilar: boolean
+  ) => {
     try {
       const response = await fetch(`/api/transactions/${transactionId}/category`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ categoryId, learnFromThis }),
+        body: JSON.stringify({ categoryId, learnFromThis, applyToSimilar }),
       });
 
       if (!response.ok) throw new Error('Failed to update category');
@@ -368,7 +373,13 @@ export function TransactionList({ transactions: initialTransactions, categories:
         });
       });
 
-      if (learnFromThis && result.keywordAdded) {
+      if (!applyToSimilar) {
+        if (learnFromThis && result.keywordAdded) {
+          showToast(`הקטגוריה עודכנה לתנועה הזו בלבד. למדתי "${result.keywordAdded}" להמשך`, 'learning');
+        } else {
+          showToast('הקטגוריה עודכנה לתנועה הזו בלבד', 'success');
+        }
+      } else if (learnFromThis && result.keywordAdded) {
         if (result.updatedSimilar > 0) {
           showToast(`למדתי! עודכנו ${result.updatedSimilar} עסקאות זהות`, 'learning');
         } else {

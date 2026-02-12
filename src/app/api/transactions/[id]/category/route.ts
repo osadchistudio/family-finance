@@ -12,7 +12,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { categoryId, learnFromThis } = body;
+    const { categoryId, learnFromThis, applyToSimilar = true } = body;
 
     // Get the transaction
     const transaction = await prisma.transaction.findUnique({
@@ -38,25 +38,26 @@ export async function PATCH(
     let updatedSimilar = 0;
     let keywordAdded = null;
 
-    // Always propagate category change to identical transactions (same description)
-    // so manual corrections stay consistent across repeated merchants.
-    const similarResult = await prisma.transaction.updateMany({
-      where: {
-        id: { not: id },
-        description: {
-          equals: transaction.description,
-          mode: 'insensitive',
+    if (applyToSimilar) {
+      // Optionally propagate category change to identical transactions (same description)
+      const similarResult = await prisma.transaction.updateMany({
+        where: {
+          id: { not: id },
+          description: {
+            equals: transaction.description,
+            mode: 'insensitive',
+          },
+          NOT: {
+            categoryId: categoryId ?? null,
+          },
         },
-        NOT: {
-          categoryId: categoryId ?? null,
+        data: {
+          categoryId,
+          isAutoCategorized: false,
         },
-      },
-      data: {
-        categoryId,
-        isAutoCategorized: false,
-      },
-    });
-    updatedSimilar = similarResult.count;
+      });
+      updatedSimilar = similarResult.count;
+    }
 
     // If user wants the system to learn from this (future transactions)
     if (learnFromThis && categoryId) {
@@ -90,6 +91,7 @@ export async function PATCH(
       success: true,
       transaction: updated,
       learned: learnFromThis,
+      appliedToSimilar: applyToSimilar,
       updatedSimilar,
       keywordAdded
     });

@@ -57,6 +57,7 @@ interface TransactionListProps {
 }
 
 type ViewMode = 'list' | 'byCategory' | 'grouped';
+type AmountTypeFilter = 'all' | 'expense' | 'income';
 
 interface GroupedTransaction {
   description: string;
@@ -118,6 +119,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedAccount, setSelectedAccount] = useState<string>('');
+  const [selectedAmountType, setSelectedAmountType] = useState<AmountTypeFilter>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>(''); // '' = all, 'YYYY-MM' = specific
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
@@ -224,14 +226,18 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const amountSearch = parseAmountSearchTerm(searchTerm);
 
   const filteredTransactions = transactions.filter(tx => {
+    const txAmount = parseFloat(tx.amount);
     const matchesTextSearch = !normalizedSearchTerm || tx.description.toLowerCase().includes(normalizedSearchTerm);
     const matchesAmountSearch = amountSearch !== null && matchesExpenseAmount(tx.amount, amountSearch);
     const matchesSearch = !normalizedSearchTerm || matchesTextSearch || matchesAmountSearch;
     const matchesCategory = !selectedCategory ||
       (selectedCategory === 'uncategorized' ? !tx.categoryId : tx.categoryId === selectedCategory);
     const matchesAccount = !selectedAccount || tx.account.id === selectedAccount;
+    const matchesAmountType = selectedAmountType === 'all'
+      || (selectedAmountType === 'expense' && txAmount < 0)
+      || (selectedAmountType === 'income' && txAmount > 0);
     const matchesMonth = !selectedMonth || dayjs(tx.date).format('YYYY-MM') === selectedMonth;
-    return matchesSearch && matchesCategory && matchesAccount && matchesMonth;
+    return matchesSearch && matchesCategory && matchesAccount && matchesAmountType && matchesMonth;
   });
 
   // Group transactions by description for grouped view
@@ -550,6 +556,17 @@ export function TransactionList({ transactions: initialTransactions, categories:
                 {cat.icon} {cat.name}
               </option>
             ))}
+          </select>
+        </div>
+        <div className="min-w-[170px]">
+          <select
+            value={selectedAmountType}
+            onChange={(e) => setSelectedAmountType(e.target.value as AmountTypeFilter)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="all">כל הסכומים</option>
+            <option value="expense">רק הוצאות</option>
+            <option value="income">רק הכנסות</option>
           </select>
         </div>
 

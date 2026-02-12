@@ -25,6 +25,24 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Viewport-safe icon picker + income/expense filter in transactions
+Why:
+- Category icon dropdown could overflow outside the viewport near screen edges.
+- Needed an explicit transaction filter to show only expenses or only income.
+
+What changed:
+- Category icon picker now renders in a portal with fixed positioning and dynamic viewport clamping (opens with safe top/left/height and repositions on resize/scroll).
+- Added close behavior by backdrop click and `Escape` key for icon picker.
+- Transactions page now includes a new amount-type filter: all / only expenses / only income.
+
+Files touched:
+- `/src/app/categories/page.tsx`
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Category sync fix + searchable extended icon picker
 Why:
 - Newly created categories could be missing in transaction assignment dropdown due stale category data/caching.

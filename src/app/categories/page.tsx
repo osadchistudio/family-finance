@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, Pencil, Trash2, Save, X, Search } from 'lucide-react';
 import { showToast } from '@/components/ui/Toast';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
@@ -460,6 +461,8 @@ function CategoryForm({ formData, setFormData, onSave, onCancel }: CategoryFormP
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [iconSearch, setIconSearch] = useState('');
+  const [iconPickerStyle, setIconPickerStyle] = useState<CSSProperties>({});
+  const iconButtonRef = useRef<HTMLButtonElement>(null);
 
   const filteredIconOptions = useMemo(() => {
     const query = iconSearch.trim().toLowerCase();
@@ -471,6 +474,66 @@ function CategoryForm({ formData, setFormData, onSave, onCancel }: CategoryFormP
       || option.keywords.some(keyword => keyword.toLowerCase().includes(query))
     );
   }, [iconSearch]);
+
+  useEffect(() => {
+    if (!showEmojiPicker || !iconButtonRef.current) return;
+
+    const updatePosition = () => {
+      if (!iconButtonRef.current) return;
+
+      const rect = iconButtonRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const margin = 8;
+      const preferredHeight = 520;
+      const panelWidth = Math.min(380, viewportWidth - margin * 2);
+      const spaceBelow = viewportHeight - rect.bottom - margin;
+      const spaceAbove = rect.top - margin;
+      const shouldOpenUpward = spaceBelow < 340 && spaceAbove > spaceBelow;
+      const availableHeight = shouldOpenUpward ? spaceAbove : spaceBelow;
+      const maxHeight = Math.max(220, Math.min(preferredHeight, availableHeight - 8));
+
+      let left = rect.left;
+      if (left + panelWidth > viewportWidth - margin) {
+        left = viewportWidth - margin - panelWidth;
+      }
+      if (left < margin) {
+        left = margin;
+      }
+
+      const top = shouldOpenUpward
+        ? Math.max(margin, rect.top - maxHeight - 4)
+        : rect.bottom + 4;
+
+      setIconPickerStyle({
+        position: 'fixed',
+        top,
+        left,
+        width: panelWidth,
+        maxHeight,
+        zIndex: 80,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [showEmojiPicker]);
+
+  useEffect(() => {
+    if (!showEmojiPicker) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowEmojiPicker(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showEmojiPicker]);
 
   return (
     <div className="space-y-4">
@@ -525,6 +588,7 @@ function CategoryForm({ formData, setFormData, onSave, onCancel }: CategoryFormP
             אייקון
           </label>
           <button
+            ref={iconButtonRef}
             type="button"
             onClick={() => {
               setShowEmojiPicker(!showEmojiPicker);
@@ -539,54 +603,70 @@ function CategoryForm({ formData, setFormData, onSave, onCancel }: CategoryFormP
             <span className="text-gray-500 text-sm">לחץ לבחירה</span>
           </button>
 
-          {showEmojiPicker && (
-            <div className="absolute z-10 mt-1 p-3 bg-white border border-gray-200 rounded-lg shadow-lg w-[360px] max-w-[calc(100vw-2rem)]">
-              <div className="relative mb-2">
-                <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  value={iconSearch}
-                  onChange={(e) => setIconSearch(e.target.value)}
-                  placeholder="חיפוש אייקון..."
-                  className="w-full pr-8 pl-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
+          {showEmojiPicker && typeof window !== 'undefined' && createPortal(
+            <>
+              <div
+                className="fixed inset-0 z-[70]"
+                onClick={() => setShowEmojiPicker(false)}
+              />
+              <div
+                style={iconPickerStyle}
+                className="p-3 bg-white border border-gray-200 rounded-lg shadow-lg flex flex-col overflow-hidden"
+              >
+                <div className="relative mb-2">
+                  <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={iconSearch}
+                    onChange={(e) => setIconSearch(e.target.value)}
+                    placeholder="חיפוש אייקון..."
+                    className="w-full pr-8 pl-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
 
-              <div className="mb-3">
-                <label className="block text-xs text-gray-500 mb-1">הדבק אייקון ידנית</label>
-                <input
-                  type="text"
-                  value={formData.icon}
-                  onChange={(e) => setFormData(prev => ({ ...prev, icon: e.target.value.trim() || '📁' }))}
-                  className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="למשל 🧠"
-                />
-              </div>
+                <div className="mb-3">
+                  <label className="block text-xs text-gray-500 mb-1">הדבק אייקון ידנית</label>
+                  <input
+                    type="text"
+                    value={formData.icon}
+                    onChange={(e) => setFormData(prev => ({ ...prev, icon: e.target.value.trim() || '📁' }))}
+                    className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="למשל 🧠"
+                  />
+                </div>
 
-              <div className="grid grid-cols-8 gap-1 max-h-56 overflow-y-auto">
-                {filteredIconOptions.map((option) => (
-                  <button
-                    key={`${option.icon}-${option.label}`}
-                    type="button"
-                    onClick={() => {
-                      setFormData(prev => ({ ...prev, icon: option.icon }));
-                      setShowEmojiPicker(false);
-                    }}
-                    title={option.label}
-                    className={`
-                      text-2xl p-1.5 rounded hover:bg-gray-100 transition-colors
-                      ${formData.icon === option.icon ? 'bg-blue-50 ring-1 ring-blue-200' : ''}
-                    `}
-                  >
-                    {option.icon}
-                  </button>
-                ))}
-              </div>
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  {filteredIconOptions.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center py-4">לא נמצאו אייקונים</p>
+                  ) : (
+                    <div className="grid grid-cols-8 gap-1">
+                      {filteredIconOptions.map((option) => (
+                        <button
+                          key={`${option.icon}-${option.label}`}
+                          type="button"
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, icon: option.icon }));
+                            setShowEmojiPicker(false);
+                          }}
+                          title={option.label}
+                          className={`
+                            text-2xl p-1.5 rounded hover:bg-gray-100 transition-colors
+                            ${formData.icon === option.icon ? 'bg-blue-50 ring-1 ring-blue-200' : ''}
+                          `}
+                        >
+                          {option.icon}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-              <p className="text-xs text-gray-500 mt-2">
-                {filteredIconOptions.length} אייקונים זמינים
-              </p>
-            </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {filteredIconOptions.length} אייקונים זמינים
+                </p>
+              </div>
+            </>,
+            document.body
           )}
         </div>
 

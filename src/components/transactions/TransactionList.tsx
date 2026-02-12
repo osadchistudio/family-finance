@@ -334,48 +334,47 @@ export function TransactionList({ transactions: initialTransactions, categories:
       const result = await response.json();
 
       // Update local state
-      setTransactions(prev => prev.map(tx => {
-        if (tx.id === transactionId) {
-          const newCategory = categories.find(c => c.id === categoryId);
-          return {
-            ...tx,
-            categoryId,
-            category: newCategory ? {
-              id: newCategory.id,
-              name: newCategory.name,
-              icon: newCategory.icon || '📁',
-              color: newCategory.color || '#6B7280',
-            } : null,
-          };
-        }
-        // Also update similar transactions if learning was applied
-        if (learnFromThis && result.updatedSimilar > 0) {
-          const updatedTx = transactions.find(t => t.id === transactionId);
-          if (updatedTx && tx.description === updatedTx.description && !tx.categoryId) {
-            const newCategory = categories.find(c => c.id === categoryId);
+      const newCategory = categories.find(c => c.id === categoryId);
+      const mappedCategory = newCategory ? {
+        id: newCategory.id,
+        name: newCategory.name,
+        icon: newCategory.icon || '📁',
+        color: newCategory.color || '#6B7280',
+      } : null;
+
+      setTransactions(prev => {
+        const sourceTx = prev.find(item => item.id === transactionId);
+        const sourceDescription = sourceTx?.description.toLowerCase().trim() || '';
+
+        return prev.map(tx => {
+          if (tx.id === transactionId) {
             return {
               ...tx,
               categoryId,
-              category: newCategory ? {
-                id: newCategory.id,
-                name: newCategory.name,
-                icon: newCategory.icon || '📁',
-                color: newCategory.color || '#6B7280',
-              } : null,
+              category: mappedCategory,
             };
           }
-        }
-        return tx;
-      }));
 
-      if (learnFromThis) {
+          if (result.updatedSimilar > 0 && sourceDescription && tx.description.toLowerCase().trim() === sourceDescription) {
+            return {
+              ...tx,
+              categoryId,
+              category: mappedCategory,
+            };
+          }
+
+          return tx;
+        });
+      });
+
+      if (learnFromThis && result.keywordAdded) {
         if (result.updatedSimilar > 0) {
-          showToast(`למדתי! עודכנו ${result.updatedSimilar} עסקאות דומות`, 'learning');
-        } else if (result.keywordAdded) {
-          showToast(`למדתי! אזהה "${result.keywordAdded}" בעתיד`, 'learning');
+          showToast(`למדתי! עודכנו ${result.updatedSimilar} עסקאות זהות`, 'learning');
         } else {
-          showToast('הקטגוריה עודכנה', 'success');
+          showToast(`למדתי! אזהה "${result.keywordAdded}" בעתיד`, 'learning');
         }
+      } else if (result.updatedSimilar > 0) {
+        showToast(`הקטגוריה עודכנה. עודכנו גם ${result.updatedSimilar} עסקאות זהות`, 'success');
       } else {
         showToast('הקטגוריה עודכנה', 'success');
       }

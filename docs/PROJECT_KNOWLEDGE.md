@@ -25,6 +25,24 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Category change now auto-propagates to identical transactions
+Why:
+- Users wanted a manual category fix on one transaction to update all identical merchant transactions automatically.
+
+What changed:
+- Category update API now always propagates the selected category to all transactions with the same description (case-insensitive), excluding the edited row itself.
+- Propagation is independent of the "learn from this assignment" checkbox.
+- "Learn" still controls keyword learning for future imports; propagation handles existing identical rows immediately.
+- Transactions UI local state now mirrors this propagation instantly after category change.
+
+Files touched:
+- `/src/app/api/transactions/[id]/category/route.ts`
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Per-transaction AI auto-categorization action
 Why:
 - Users needed to run AI categorization on a single uncategorized transaction without triggering the global "categorize all" action.

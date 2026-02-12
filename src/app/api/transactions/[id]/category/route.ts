@@ -38,7 +38,27 @@ export async function PATCH(
     let updatedSimilar = 0;
     let keywordAdded = null;
 
-    // If user wants the system to learn from this
+    // Always propagate category change to identical transactions (same description)
+    // so manual corrections stay consistent across repeated merchants.
+    const similarResult = await prisma.transaction.updateMany({
+      where: {
+        id: { not: id },
+        description: {
+          equals: transaction.description,
+          mode: 'insensitive',
+        },
+        NOT: {
+          categoryId: categoryId ?? null,
+        },
+      },
+      data: {
+        categoryId,
+        isAutoCategorized: false,
+      },
+    });
+    updatedSimilar = similarResult.count;
+
+    // If user wants the system to learn from this (future transactions)
     if (learnFromThis && categoryId) {
       // Extract a keyword from the description
       const keyword = extractKeyword(transaction.description);
@@ -64,24 +84,6 @@ export async function PATCH(
         }
       }
 
-      // Also update all similar transactions that are uncategorized
-      const searchTerm = keyword || transaction.description.substring(0, 10);
-      const result = await prisma.transaction.updateMany({
-        where: {
-          description: {
-            contains: searchTerm,
-            mode: 'insensitive'
-          },
-          categoryId: null,
-          id: { not: id } // Exclude current transaction
-        },
-        data: {
-          categoryId,
-          isAutoCategorized: true
-        }
-      });
-
-      updatedSimilar = result.count;
     }
 
     return NextResponse.json({

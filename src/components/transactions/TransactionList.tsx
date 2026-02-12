@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { formatCurrency, formatDate, getHebrewMonthName } from '@/lib/formatters';
 import { Search, LayoutList, PieChart, Wand2, Loader2, Layers, ChevronRight, ChevronLeft, CalendarDays, Repeat, MessageSquare, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { CategorySelector } from './CategorySelector';
@@ -34,6 +34,13 @@ interface Category {
   name: string;
   icon: string | null;
   color: string | null;
+}
+
+interface ApiCategory {
+  id: string;
+  name: string;
+  icon?: string | null;
+  color?: string | null;
 }
 
 interface Account {
@@ -105,8 +112,9 @@ function matchesExpenseAmount(amount: string, search: ParsedAmountSearch): boole
     || Math.abs(absoluteAmount - search.value) < AMOUNT_MATCH_EPSILON;
 }
 
-export function TransactionList({ transactions: initialTransactions, categories, accounts }: TransactionListProps) {
+export function TransactionList({ transactions: initialTransactions, categories: initialCategories, accounts }: TransactionListProps) {
   const [transactions, setTransactions] = useState(initialTransactions);
+  const [categories, setCategories] = useState(initialCategories);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedAccount, setSelectedAccount] = useState<string>('');
@@ -122,6 +130,45 @@ export function TransactionList({ transactions: initialTransactions, categories,
 
   // Expanded categories in byCategory view
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let active = true;
+
+    const syncCategories = async () => {
+      try {
+        const response = await fetch('/api/categories', { cache: 'no-store' });
+        if (!response.ok) return;
+
+        const payload = await response.json();
+        if (!Array.isArray(payload)) return;
+
+        const normalized: Category[] = (payload as ApiCategory[]).map(cat => ({
+          id: cat.id,
+          name: cat.name,
+          icon: cat.icon || '📁',
+          color: cat.color || '#6B7280',
+        }));
+
+        if (active) {
+          setCategories(normalized);
+        }
+      } catch {
+        // Ignore category sync errors and keep existing list.
+      }
+    };
+
+    void syncCategories();
+
+    const onFocus = () => {
+      void syncCategories();
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      active = false;
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
 
   const toggleCategoryExpanded = (categoryKey: string) => {
     setExpandedCategories(prev => {

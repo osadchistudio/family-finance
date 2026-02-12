@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Save, X } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, Pencil, Trash2, Save, X, Search } from 'lucide-react';
 import { showToast } from '@/components/ui/Toast';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
@@ -20,11 +20,103 @@ interface Category {
   keywords?: { id: string; keyword: string }[];
 }
 
-// Emoji picker options
-const EMOJI_OPTIONS = [
-  '🛒', '🍽️', '🚗', '⛽', '🏠', '💡', '📱', '🎬', '👕', '💊',
-  '🎓', '✈️', '🎁', '💰', '📦', '🔧', '🎨', '🏋️', '🐕', '👶',
-  '💇', '📚', '🎵', '🎮', '☕', '🍕', '🚌', '🏥', '💼', '🛍️'
+interface IconOption {
+  icon: string;
+  label: string;
+  keywords: string[];
+}
+
+// Extended icon picker options with searchable labels/keywords
+const ICON_OPTIONS: IconOption[] = [
+  { icon: '📁', label: 'כללי', keywords: ['general', 'folder', 'כללי'] },
+  { icon: '🛒', label: 'קניות', keywords: ['shopping', 'market', 'קניות', 'סופר'] },
+  { icon: '🛍️', label: 'שופינג', keywords: ['shop', 'bag', 'fashion', 'שופינג'] },
+  { icon: '🍽️', label: 'מסעדה', keywords: ['food', 'restaurant', 'eat', 'מסעדה'] },
+  { icon: '🍔', label: 'המבורגר', keywords: ['food', 'burger', 'אוכל מהיר'] },
+  { icon: '🍕', label: 'פיצה', keywords: ['food', 'pizza', 'delivery', 'משלוח'] },
+  { icon: '☕', label: 'קפה', keywords: ['coffee', 'cafe', 'קפה'] },
+  { icon: '🍣', label: 'סושי', keywords: ['food', 'sushi', 'אוכל'] },
+  { icon: '🚗', label: 'רכב', keywords: ['car', 'vehicle', 'auto', 'רכב'] },
+  { icon: '⛽', label: 'דלק', keywords: ['fuel', 'gas', 'petrol', 'דלק'] },
+  { icon: '🅿️', label: 'חניה', keywords: ['parking', 'park', 'חניה'] },
+  { icon: '🚌', label: 'אוטובוס', keywords: ['bus', 'transport', 'תחבורה'] },
+  { icon: '🚆', label: 'רכבת', keywords: ['train', 'rail', 'תחבורה'] },
+  { icon: '🚕', label: 'מונית', keywords: ['taxi', 'ride', 'נסיעה'] },
+  { icon: '✈️', label: 'טיסה', keywords: ['flight', 'airplane', 'travel', 'טיסה'] },
+  { icon: '🏠', label: 'בית', keywords: ['home', 'house', 'דיור'] },
+  { icon: '🏡', label: 'משכנתא', keywords: ['mortgage', 'home', 'משכנתא'] },
+  { icon: '🔑', label: 'שכירות', keywords: ['rent', 'lease', 'שכירות'] },
+  { icon: '🛠️', label: 'תחזוקה', keywords: ['maintenance', 'repair', 'תיקון'] },
+  { icon: '💡', label: 'חשמל', keywords: ['electricity', 'power', 'חשמל'] },
+  { icon: '🚿', label: 'מים', keywords: ['water', 'utility', 'מים'] },
+  { icon: '🔥', label: 'גז', keywords: ['gas', 'utility', 'גז'] },
+  { icon: '📱', label: 'סלולר', keywords: ['mobile', 'phone', 'cell', 'סלולר'] },
+  { icon: '📶', label: 'אינטרנט', keywords: ['internet', 'wifi', 'תקשורת'] },
+  { icon: '📺', label: 'טלוויזיה', keywords: ['tv', 'media', 'television', 'טלוויזיה'] },
+  { icon: '🧾', label: 'חשבונות', keywords: ['bill', 'invoice', 'חשבוניות'] },
+  { icon: '💊', label: 'תרופות', keywords: ['medicine', 'pharmacy', 'בריאות'] },
+  { icon: '🏥', label: 'בית חולים', keywords: ['hospital', 'health', 'רפואה'] },
+  { icon: '🦷', label: 'רופא שיניים', keywords: ['dentist', 'teeth', 'שיניים'] },
+  { icon: '👓', label: 'אופטיקה', keywords: ['glasses', 'optics', 'ראיה'] },
+  { icon: '🩺', label: 'רופא', keywords: ['doctor', 'clinic', 'רפואה'] },
+  { icon: '💄', label: 'קוסמטיקה', keywords: ['beauty', 'makeup', 'טיפוח'] },
+  { icon: '💇', label: 'ספר', keywords: ['hair', 'barber', 'haircut', 'שיער'] },
+  { icon: '🧴', label: 'טיפוח אישי', keywords: ['care', 'hygiene', 'personal'] },
+  { icon: '👕', label: 'ביגוד', keywords: ['clothes', 'fashion', 'בגדים'] },
+  { icon: '👟', label: 'נעליים', keywords: ['shoes', 'footwear', 'נעליים'] },
+  { icon: '🎓', label: 'לימודים', keywords: ['education', 'school', 'לימודים'] },
+  { icon: '📚', label: 'ספרים', keywords: ['books', 'study', 'ספר'] },
+  { icon: '🧑‍🏫', label: 'קורסים', keywords: ['course', 'training', 'קורס'] },
+  { icon: '🎬', label: 'קולנוע', keywords: ['movie', 'cinema', 'בילוי'] },
+  { icon: '🎭', label: 'תרבות', keywords: ['culture', 'show', 'theatre'] },
+  { icon: '🎵', label: 'מוזיקה', keywords: ['music', 'audio', 'מוזיקה'] },
+  { icon: '🎮', label: 'גיימינג', keywords: ['games', 'gaming', 'משחקים'] },
+  { icon: '🏋️', label: 'כושר', keywords: ['fitness', 'gym', 'ספורט'] },
+  { icon: '⚽', label: 'ספורט', keywords: ['sport', 'football', 'אימון'] },
+  { icon: '🧘', label: 'יוגה', keywords: ['yoga', 'wellness', 'בריאות'] },
+  { icon: '💼', label: 'עבודה', keywords: ['work', 'office', 'עסק'] },
+  { icon: '📈', label: 'השקעות', keywords: ['invest', 'stocks', 'finance', 'השקעות'] },
+  { icon: '💰', label: 'חיסכון', keywords: ['savings', 'money', 'cash', 'חיסכון'] },
+  { icon: '🏦', label: 'בנק', keywords: ['bank', 'finance', 'בנק'] },
+  { icon: '💳', label: 'כרטיס אשראי', keywords: ['credit', 'card', 'אשראי'] },
+  { icon: '🧮', label: 'חשבונאות', keywords: ['accounting', 'math', 'חשבונאות'] },
+  { icon: '📦', label: 'משלוחים', keywords: ['shipping', 'delivery', 'package'] },
+  { icon: '🚚', label: 'הובלה', keywords: ['transport', 'truck', 'delivery'] },
+  { icon: '🧸', label: 'ילדים', keywords: ['kids', 'baby', 'child'] },
+  { icon: '👶', label: 'תינוק', keywords: ['baby', 'infant', 'ילדים'] },
+  { icon: '🐕', label: 'חיות מחמד', keywords: ['pets', 'dog', 'cat', 'חיות'] },
+  { icon: '🐈', label: 'חתול', keywords: ['cat', 'pets', 'חתול'] },
+  { icon: '🎁', label: 'מתנות', keywords: ['gift', 'present', 'מתנה'] },
+  { icon: '💍', label: 'אירועים', keywords: ['wedding', 'event', 'אירוע'] },
+  { icon: '🧳', label: 'נסיעות', keywords: ['travel', 'trip', 'vacation', 'נופש'] },
+  { icon: '🏨', label: 'מלון', keywords: ['hotel', 'travel', 'לינה'] },
+  { icon: '🏖️', label: 'חופשה', keywords: ['vacation', 'beach', 'holiday'] },
+  { icon: '🎨', label: 'תחביבים', keywords: ['hobby', 'art', 'יצירה'] },
+  { icon: '🔧', label: 'כלים', keywords: ['tools', 'hardware', 'repair'] },
+  { icon: '🧹', label: 'ניקיון', keywords: ['cleaning', 'home', 'ניקיון'] },
+  { icon: '🪑', label: 'ריהוט', keywords: ['furniture', 'home', 'רהיטים'] },
+  { icon: '🖥️', label: 'מחשבים', keywords: ['computer', 'pc', 'tech'] },
+  { icon: '📲', label: 'אפליקציות', keywords: ['app', 'software', 'mobile'] },
+  { icon: '🧠', label: 'התפתחות אישית', keywords: ['self', 'growth', 'mind'] },
+  { icon: '🙏', label: 'תרומות', keywords: ['donation', 'charity', 'תרומה'] },
+  { icon: '⚖️', label: 'משפטי', keywords: ['legal', 'law', 'עוד'] },
+  { icon: '🛡️', label: 'ביטוח', keywords: ['insurance', 'policy', 'ביטוח'] },
+  { icon: '💸', label: 'עמלות', keywords: ['fee', 'commission', 'עמלה'] },
+  { icon: '🔁', label: 'העברה', keywords: ['transfer', 'move', 'bank transfer'] },
+  { icon: '📤', label: 'שליחה', keywords: ['send', 'outgoing', 'transfer'] },
+  { icon: '📥', label: 'קבלה', keywords: ['receive', 'incoming', 'deposit'] },
+  { icon: '✅', label: 'מאושר', keywords: ['done', 'approved', 'success'] },
+  { icon: '❗', label: 'דחוף', keywords: ['urgent', 'important', 'warning'] },
+  { icon: '⭐', label: 'מועדף', keywords: ['favorite', 'star', 'best'] },
+  { icon: '🚫', label: 'חסום', keywords: ['blocked', 'forbidden', 'ban'] },
+  { icon: '🌐', label: 'אונליין', keywords: ['online', 'web', 'internet'] },
+  { icon: '🧾', label: 'קבלות', keywords: ['receipt', 'bill', 'invoice'] },
+  { icon: '🧑‍💼', label: 'עסקים', keywords: ['business', 'office', 'company'] },
+  { icon: '🏢', label: 'משרד', keywords: ['office', 'building', 'work'] },
+  { icon: '🧺', label: 'כביסה', keywords: ['laundry', 'clean', 'בית'] },
+  { icon: '🪙', label: 'מטבע', keywords: ['coin', 'currency', 'כסף'] },
+  { icon: '🏧', label: 'כספומט', keywords: ['atm', 'cash', 'withdraw'] },
+  { icon: '📌', label: 'אחר', keywords: ['other', 'misc', 'custom'] },
 ];
 
 // Color picker options
@@ -367,6 +459,18 @@ interface CategoryFormProps {
 function CategoryForm({ formData, setFormData, onSave, onCancel }: CategoryFormProps) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [iconSearch, setIconSearch] = useState('');
+
+  const filteredIconOptions = useMemo(() => {
+    const query = iconSearch.trim().toLowerCase();
+    if (!query) return ICON_OPTIONS;
+
+    return ICON_OPTIONS.filter(option =>
+      option.icon.includes(query)
+      || option.label.toLowerCase().includes(query)
+      || option.keywords.some(keyword => keyword.toLowerCase().includes(query))
+    );
+  }, [iconSearch]);
 
   return (
     <div className="space-y-4">
@@ -425,6 +529,9 @@ function CategoryForm({ formData, setFormData, onSave, onCancel }: CategoryFormP
             onClick={() => {
               setShowEmojiPicker(!showEmojiPicker);
               setShowColorPicker(false);
+              if (!showEmojiPicker) {
+                setIconSearch('');
+              }
             }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg flex items-center gap-2 hover:bg-gray-50"
           >
@@ -433,20 +540,52 @@ function CategoryForm({ formData, setFormData, onSave, onCancel }: CategoryFormP
           </button>
 
           {showEmojiPicker && (
-            <div className="absolute z-10 mt-1 p-2 bg-white border border-gray-200 rounded-lg shadow-lg grid grid-cols-6 gap-1 max-h-48 overflow-y-auto">
-              {EMOJI_OPTIONS.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => {
-                    setFormData(prev => ({ ...prev, icon: emoji }));
-                    setShowEmojiPicker(false);
-                  }}
-                  className="text-2xl p-2 hover:bg-gray-100 rounded"
-                >
-                  {emoji}
-                </button>
-              ))}
+            <div className="absolute z-10 mt-1 p-3 bg-white border border-gray-200 rounded-lg shadow-lg w-[360px] max-w-[calc(100vw-2rem)]">
+              <div className="relative mb-2">
+                <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={iconSearch}
+                  onChange={(e) => setIconSearch(e.target.value)}
+                  placeholder="חיפוש אייקון..."
+                  className="w-full pr-8 pl-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div className="mb-3">
+                <label className="block text-xs text-gray-500 mb-1">הדבק אייקון ידנית</label>
+                <input
+                  type="text"
+                  value={formData.icon}
+                  onChange={(e) => setFormData(prev => ({ ...prev, icon: e.target.value.trim() || '📁' }))}
+                  className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="למשל 🧠"
+                />
+              </div>
+
+              <div className="grid grid-cols-8 gap-1 max-h-56 overflow-y-auto">
+                {filteredIconOptions.map((option) => (
+                  <button
+                    key={`${option.icon}-${option.label}`}
+                    type="button"
+                    onClick={() => {
+                      setFormData(prev => ({ ...prev, icon: option.icon }));
+                      setShowEmojiPicker(false);
+                    }}
+                    title={option.label}
+                    className={`
+                      text-2xl p-1.5 rounded hover:bg-gray-100 transition-colors
+                      ${formData.icon === option.icon ? 'bg-blue-50 ring-1 ring-blue-200' : ''}
+                    `}
+                  >
+                    {option.icon}
+                  </button>
+                ))}
+              </div>
+
+              <p className="text-xs text-gray-500 mt-2">
+                {filteredIconOptions.length} אייקונים זמינים
+              </p>
             </div>
           )}
         </div>

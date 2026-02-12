@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/prisma';
 import { TransactionList } from '@/components/transactions/TransactionList';
 
+export const dynamic = 'force-dynamic';
+
 async function getTransactions() {
   const transactions = await prisma.transaction.findMany({
     where: { isExcluded: false },

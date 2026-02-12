@@ -25,6 +25,26 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Category sync fix + searchable extended icon picker
+Why:
+- Newly created categories could be missing in transaction assignment dropdown due stale category data/caching.
+- Category icon picker was too limited and lacked search.
+
+What changed:
+- Transactions page now refreshes categories from API (including on window focus) so new categories appear in assignment dropdown without waiting for a full deploy cycle.
+- Category API and transactions page were switched to dynamic rendering behavior to prevent stale category snapshots.
+- Category icon picker now includes an extended icon set, text search by label/keywords, and manual icon input.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/app/api/categories/route.ts`
+- `/src/app/transactions/page.tsx`
+- `/src/app/categories/page.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Search by displayed expense amount + transaction deletion tools
 Why:
 - Amount search did not match what users see in UI when values are rounded (example: `262.27` displayed as `₪262`).

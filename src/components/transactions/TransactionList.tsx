@@ -123,7 +123,6 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const [selectedMonth, setSelectedMonth] = useState<string>(''); // '' = all, 'YYYY-MM' = specific
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
-  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
 
   // Notes inline editing
@@ -194,10 +193,6 @@ export function TransactionList({ transactions: initialTransactions, categories:
   }, [transactions]);
 
   const currentMonthIndex = selectedMonth ? availableMonths.indexOf(selectedMonth) : -1;
-  const selectedAccountName = selectedAccount
-    ? (accounts.find(acc => acc.id === selectedAccount)?.name || 'החשבון הנבחר')
-    : 'כל החשבונות';
-
   const goToPrevMonth = () => {
     if (!selectedMonth) {
       // From "all" go to newest month
@@ -450,7 +445,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
   };
 
   const handleDeleteTransaction = async (tx: Transaction) => {
-    if (deletingTransactionId || isBulkDeleting) return;
+    if (deletingTransactionId) return;
 
     const amount = parseFloat(tx.amount);
     const amountText = formatCurrency(Math.abs(Number.isFinite(amount) ? amount : 0));
@@ -470,48 +465,6 @@ export function TransactionList({ transactions: initialTransactions, categories:
       showToast('שגיאה במחיקת תנועה', 'error');
     } finally {
       setDeletingTransactionId(null);
-    }
-  };
-
-  const handleDeleteConsolidatedCardCharges = async () => {
-    if (isBulkDeleting || deletingTransactionId) return;
-
-    const monthLabel = selectedMonth ? getMonthLabel(selectedMonth) : 'כל החודשים';
-    const confirmed = window.confirm(
-      `למחוק את כל חיובי האשראי המרוכזים מחשבון בנק?\n\nחשבון: ${selectedAccountName}\nתקופה: ${monthLabel}\n\nפעולה זו בלתי הפיכה.`
-    );
-    if (!confirmed) return;
-
-    setIsBulkDeleting(true);
-    try {
-      const response = await fetch('/api/transactions/bulk-delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'consolidatedCardCharges',
-          accountId: selectedAccount || null,
-          month: selectedMonth || null,
-        }),
-      });
-
-      if (!response.ok) throw new Error('Failed to bulk delete transactions');
-
-      const result = await response.json();
-      const deletedIds = new Set<string>(result.deletedIds || []);
-
-      if (deletedIds.size > 0) {
-        setTransactions(prev => prev.filter(tx => !deletedIds.has(tx.id)));
-      }
-
-      if (result.deleted > 0) {
-        showToast(`נמחקו ${result.deleted} חיובי אשראי מרוכזים`, 'success');
-      } else {
-        showToast('לא נמצאו חיובי אשראי מרוכזים למחיקה', 'info');
-      }
-    } catch {
-      showToast('שגיאה במחיקה מרוכזת', 'error');
-    } finally {
-      setIsBulkDeleting(false);
     }
   };
 
@@ -629,22 +582,6 @@ export function TransactionList({ transactions: initialTransactions, categories:
           </button>
         )}
 
-        <button
-          onClick={handleDeleteConsolidatedCardCharges}
-          disabled={isBulkDeleting || deletingTransactionId !== null}
-          className={`
-            px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium border
-            transition-all
-            ${isBulkDeleting || deletingTransactionId
-              ? 'border-red-200 text-red-300 bg-red-50 cursor-not-allowed'
-              : 'border-red-300 text-red-700 hover:bg-red-50'
-            }
-          `}
-          title="מוחק חיובי אשראי מרוכזים שנכנסו מדפי בנק, כדי למנוע כפילות מול קבצי האשראי"
-        >
-          <Trash2 className="h-4 w-4" />
-          {isBulkDeleting ? 'מוחק חיובי אשראי...' : 'מחק חיובי אשראי מרוכזים'}
-        </button>
       </div>
 
       {/* Month Navigation */}
@@ -801,7 +738,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
                       <td className="px-4 py-3 text-center">
                         <button
                           onClick={() => handleDeleteTransaction(tx)}
-                          disabled={isBulkDeleting || deletingTransactionId === tx.id}
+                          disabled={deletingTransactionId === tx.id}
                           className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                           title="מחק תנועה"
                         >

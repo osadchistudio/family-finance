@@ -25,6 +25,22 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Remove consolidated-card bulk delete button from transactions UI
+Why:
+- After one-time cleanup, the extra bulk-delete button was no longer needed and took space in the filters row.
+- Automatic filtering on future bank uploads remains the primary protection against duplicates.
+
+What changed:
+- Removed the "מחק חיובי אשראי מרוכזים" button and its client-side handler from the transactions page.
+- Kept regular per-transaction delete action unchanged.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Viewport-safe icon picker + income/expense filter in transactions
 Why:
 - Category icon dropdown could overflow outside the viewport near screen edges.

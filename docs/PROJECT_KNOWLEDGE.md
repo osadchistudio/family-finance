@@ -25,6 +25,25 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Search by displayed expense amount + transaction deletion tools
+Why:
+- Amount search did not match what users see in UI when values are rounded (example: `262.27` displayed as `₪262`).
+- Needed practical cleanup for already imported duplicated credit-card charges from bank statements.
+
+What changed:
+- Amount search now matches displayed rounded expenses when searching with whole numbers (for example searching `262` matches an expense displayed as `₪262`).
+- Added single transaction deletion from transactions list.
+- Added bulk cleanup action: delete consolidated credit-card charge lines from bank-account transactions, scoped by selected account and month filters.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/app/api/transactions/[id]/route.ts`
+- `/src/app/api/transactions/bulk-delete/route.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- Bulk delete is irreversible and removes DB rows physically (not soft-delete).
+
 ### 2026-02-12 - Search by expense amount + skip consolidated card charge lines
 Why:
 - Needed to search transactions by amount (not only text).
@@ -59,4 +78,3 @@ Files touched:
 Deploy/runtime impact:
 - Full rebuild required in production.
 - No DB migration needed.
-

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { formatCurrency, formatDate, getHebrewMonthName } from '@/lib/formatters';
-import { Search, LayoutList, PieChart, Wand2, Loader2, Layers, ChevronRight, ChevronLeft, CalendarDays, Repeat, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, LayoutList, PieChart, Wand2, Loader2, Layers, ChevronRight, ChevronLeft, CalendarDays, Repeat, MessageSquare, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { CategorySelector } from './CategorySelector';
 import { showToast } from '@/components/ui/Toast';
 import dayjs from 'dayjs';
@@ -64,7 +64,12 @@ interface GroupedTransaction {
 
 const AMOUNT_MATCH_EPSILON = 0.01;
 
-function parseAmountSearchTerm(searchTerm: string): number | null {
+interface ParsedAmountSearch {
+  value: number;
+  hasFraction: boolean;
+}
+
+function parseAmountSearchTerm(searchTerm: string): ParsedAmountSearch | null {
   const trimmed = searchTerm.trim();
   if (!trimmed || !/\d/.test(trimmed)) return null;
 
@@ -78,13 +83,26 @@ function parseAmountSearchTerm(searchTerm: string): number | null {
 
   const parsed = Math.abs(parseFloat(normalized));
   if (!Number.isFinite(parsed) || parsed === 0) return null;
-  return parsed;
+
+  return {
+    value: parsed,
+    hasFraction: normalized.includes('.'),
+  };
 }
 
-function matchesExpenseAmount(amount: string, searchAmount: number): boolean {
+function matchesExpenseAmount(amount: string, search: ParsedAmountSearch): boolean {
   const numericAmount = parseFloat(amount);
   if (!Number.isFinite(numericAmount) || numericAmount >= 0) return false;
-  return Math.abs(Math.abs(numericAmount) - searchAmount) < AMOUNT_MATCH_EPSILON;
+
+  const absoluteAmount = Math.abs(numericAmount);
+
+  if (search.hasFraction) {
+    return Math.abs(absoluteAmount - search.value) < AMOUNT_MATCH_EPSILON;
+  }
+
+  // UI displays rounded whole shekels, so integer search should match that view.
+  return Math.round(absoluteAmount) === Math.round(search.value)
+    || Math.abs(absoluteAmount - search.value) < AMOUNT_MATCH_EPSILON;
 }
 
 export function TransactionList({ transactions: initialTransactions, categories, accounts }: TransactionListProps) {
@@ -95,6 +113,8 @@ export function TransactionList({ transactions: initialTransactions, categories,
   const [selectedMonth, setSelectedMonth] = useState<string>(''); // '' = all, 'YYYY-MM' = specific
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
 
   // Notes inline editing
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -125,6 +145,9 @@ export function TransactionList({ transactions: initialTransactions, categories,
   }, [transactions]);
 
   const currentMonthIndex = selectedMonth ? availableMonths.indexOf(selectedMonth) : -1;
+  const selectedAccountName = selectedAccount
+    ? (accounts.find(acc => acc.id === selectedAccount)?.name || 'החשבון הנבחר')
+    : 'כל החשבונות';
 
   const goToPrevMonth = () => {
     if (!selectedMonth) {
@@ -373,6 +396,72 @@ export function TransactionList({ transactions: initialTransactions, categories,
     }
   };
 
+  const handleDeleteTransaction = async (tx: Transaction) => {
+    if (deletingTransactionId || isBulkDeleting) return;
+
+    const amount = parseFloat(tx.amount);
+    const amountText = formatCurrency(Math.abs(Number.isFinite(amount) ? amount : 0));
+    const confirmed = window.confirm(
+      `למחוק את התנועה?\n\n${tx.description}\n${amountText}\n${formatDate(tx.date)}`
+    );
+    if (!confirmed) return;
+
+    setDeletingTransactionId(tx.id);
+    try {
+      const response = await fetch(`/api/transactions/${tx.id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete transaction');
+
+      setTransactions(prev => prev.filter(item => item.id !== tx.id));
+      showToast('התנועה נמחקה', 'success');
+    } catch {
+      showToast('שגיאה במחיקת תנועה', 'error');
+    } finally {
+      setDeletingTransactionId(null);
+    }
+  };
+
+  const handleDeleteConsolidatedCardCharges = async () => {
+    if (isBulkDeleting || deletingTransactionId) return;
+
+    const monthLabel = selectedMonth ? getMonthLabel(selectedMonth) : 'כל החודשים';
+    const confirmed = window.confirm(
+      `למחוק את כל חיובי האשראי המרוכזים מחשבון בנק?\n\nחשבון: ${selectedAccountName}\nתקופה: ${monthLabel}\n\nפעולה זו בלתי הפיכה.`
+    );
+    if (!confirmed) return;
+
+    setIsBulkDeleting(true);
+    try {
+      const response = await fetch('/api/transactions/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'consolidatedCardCharges',
+          accountId: selectedAccount || null,
+          month: selectedMonth || null,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to bulk delete transactions');
+
+      const result = await response.json();
+      const deletedIds = new Set<string>(result.deletedIds || []);
+
+      if (deletedIds.size > 0) {
+        setTransactions(prev => prev.filter(tx => !deletedIds.has(tx.id)));
+      }
+
+      if (result.deleted > 0) {
+        showToast(`נמחקו ${result.deleted} חיובי אשראי מרוכזים`, 'success');
+      } else {
+        showToast('לא נמצאו חיובי אשראי מרוכזים למחיקה', 'info');
+      }
+    } catch {
+      showToast('שגיאה במחיקה מרוכזת', 'error');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm">
       {/* Filters */}
@@ -475,6 +564,23 @@ export function TransactionList({ transactions: initialTransactions, categories,
             )}
           </button>
         )}
+
+        <button
+          onClick={handleDeleteConsolidatedCardCharges}
+          disabled={isBulkDeleting || deletingTransactionId !== null}
+          className={`
+            px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium border
+            transition-all
+            ${isBulkDeleting || deletingTransactionId
+              ? 'border-red-200 text-red-300 bg-red-50 cursor-not-allowed'
+              : 'border-red-300 text-red-700 hover:bg-red-50'
+            }
+          `}
+          title="מוחק חיובי אשראי מרוכזים שנכנסו מדפי בנק, כדי למנוע כפילות מול קבצי האשראי"
+        >
+          <Trash2 className="h-4 w-4" />
+          {isBulkDeleting ? 'מוחק חיובי אשראי...' : 'מחק חיובי אשראי מרוכזים'}
+        </button>
       </div>
 
       {/* Month Navigation */}
@@ -542,12 +648,13 @@ export function TransactionList({ transactions: initialTransactions, categories,
                 <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">קטגוריה</th>
                 <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">חשבון</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">סכום</th>
+                <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">פעולות</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                     {transactions.length === 0
                       ? 'אין תנועות להצגה. העלה קבצי תנועות כדי להתחיל.'
                       : 'לא נמצאו תנועות התואמות לחיפוש'}
@@ -626,6 +733,16 @@ export function TransactionList({ transactions: initialTransactions, categories,
                         <span className={`text-sm font-semibold ${isExpense ? 'text-red-600' : 'text-green-600'}`}>
                           {isExpense ? '' : '+'}{formatCurrency(Math.abs(amount))}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => handleDeleteTransaction(tx)}
+                          disabled={isBulkDeleting || deletingTransactionId === tx.id}
+                          className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          title="מחק תנועה"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </td>
                     </tr>
                   );

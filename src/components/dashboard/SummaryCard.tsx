@@ -7,6 +7,7 @@ interface SummaryCardProps {
   title: string;
   value: number;
   type: 'income' | 'expense' | 'balance' | 'savings';
+  format?: 'currency' | 'number';
   trend?: number;
 }
 
@@ -24,9 +25,12 @@ const colors = {
   savings: 'text-purple-600 bg-purple-50'
 };
 
-export function SummaryCard({ title, value, type, trend }: SummaryCardProps) {
+export function SummaryCard({ title, value, type, format = 'currency', trend }: SummaryCardProps) {
   const Icon = icons[type];
   const colorClass = colors[type];
+  const displayValue = format === 'number'
+    ? new Intl.NumberFormat('he-IL', { maximumFractionDigits: 0 }).format(value)
+    : formatCurrency(Math.abs(value));
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-6">
@@ -36,7 +40,7 @@ export function SummaryCard({ title, value, type, trend }: SummaryCardProps) {
           <p className={`text-2xl font-bold mt-1 ${
             type === 'expense' ? 'text-red-600' : type === 'income' ? 'text-green-600' : 'text-gray-900'
           }`}>
-            {formatCurrency(Math.abs(value))}
+            {displayValue}
           </p>
           {trend !== undefined && (
             <p className={`text-sm mt-1 ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>

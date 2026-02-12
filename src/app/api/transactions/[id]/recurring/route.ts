@@ -12,7 +12,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isRecurring, learnFromThis } = body;
+    const { isRecurring, learnFromThis, applyToIdentical = false } = body;
 
     const transaction = await prisma.transaction.findUnique({
       where: { id }
@@ -27,6 +27,23 @@ export async function PATCH(
       where: { id },
       data: { isRecurring }
     });
+
+    let updatedIdentical = 0;
+    if (applyToIdentical) {
+      const identical = await prisma.transaction.updateMany({
+        where: {
+          id: { not: id },
+          categoryId: transaction.categoryId,
+          description: {
+            equals: transaction.description,
+            mode: 'insensitive'
+          },
+          amount: transaction.amount
+        },
+        data: { isRecurring }
+      });
+      updatedIdentical = identical.count;
+    }
 
     let updatedSimilar = 0;
     let keywordAdded: string | null = null;
@@ -79,6 +96,7 @@ export async function PATCH(
       success: true,
       isRecurring,
       updatedSimilar,
+      updatedIdentical,
       keywordAdded
     });
   } catch (error) {

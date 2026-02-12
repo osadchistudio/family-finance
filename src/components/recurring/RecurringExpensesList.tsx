@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { formatCurrency, formatDate, getHebrewMonthName } from '@/lib/formatters';
-import { SummaryCard } from '@/components/dashboard/SummaryCard';
-import { Repeat, X, MessageSquare, ChevronRight, ChevronLeft, CalendarDays } from 'lucide-react';
-import { showToast } from '@/components/ui/Toast';
+import { useMemo, useState } from 'react';
 import dayjs from 'dayjs';
+import { formatCurrency, formatDate } from '@/lib/formatters';
+import { SummaryCard } from '@/components/dashboard/SummaryCard';
+import { Repeat, X } from 'lucide-react';
+import { showToast } from '@/components/ui/Toast';
 
 interface Transaction {
   id: string;
@@ -28,123 +28,118 @@ interface Transaction {
   notes: string | null;
 }
 
-interface Category {
-  id: string;
-  name: string;
-  icon: string | null;
-  color: string | null;
-}
-
 interface RecurringExpensesListProps {
   transactions: Transaction[];
-  categories: Category[];
+  averageMonthlyIncome: number;
+  incomeMonths: number;
 }
 
-export function RecurringExpensesList({ transactions: initialTransactions, categories }: RecurringExpensesListProps) {
-  const [transactions, setTransactions] = useState(initialTransactions);
-  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
-  const [noteValue, setNoteValue] = useState('');
-  const [selectedMonth, setSelectedMonth] = useState<string>('');
+interface RecurringItem {
+  key: string;
+  representativeId: string;
+  description: string;
+  amount: number;
+  categoryId: string | null;
+  category: Transaction['category'];
+  lastDate: string;
+  occurrences: number;
+}
 
-  // Compute available months
-  const availableMonths = useMemo(() => {
-    const monthSet = new Set<string>();
+function normalizeDescription(description: string): string {
+  return description.toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+function getRecurringItemKey(tx: Transaction): string {
+  const categoryKey = tx.categoryId || 'uncategorized';
+  const amountAbs = Math.abs(parseFloat(tx.amount)).toFixed(2);
+  return `${categoryKey}|${normalizeDescription(tx.description)}|${amountAbs}`;
+}
+
+export function RecurringExpensesList({
+  transactions: initialTransactions,
+  averageMonthlyIncome,
+  incomeMonths
+}: RecurringExpensesListProps) {
+  const [transactions, setTransactions] = useState(initialTransactions);
+
+  const recurringItems = useMemo(() => {
+    const itemsByKey = new Map<string, RecurringItem>();
+
     for (const tx of transactions) {
-      monthSet.add(dayjs(tx.date).format('YYYY-MM'));
+      const amount = parseFloat(tx.amount);
+      if (!Number.isFinite(amount) || amount >= 0) continue;
+
+      const key = getRecurringItemKey(tx);
+      const existing = itemsByKey.get(key);
+
+      if (!existing) {
+        itemsByKey.set(key, {
+          key,
+          representativeId: tx.id,
+          description: tx.description,
+          amount: Math.abs(amount),
+          categoryId: tx.categoryId,
+          category: tx.category,
+          lastDate: tx.date,
+          occurrences: 1
+        });
+        continue;
+      }
+
+      existing.occurrences += 1;
+      if (dayjs(tx.date).isAfter(existing.lastDate)) {
+        existing.lastDate = tx.date;
+        existing.representativeId = tx.id;
+        existing.description = tx.description;
+        existing.categoryId = tx.categoryId;
+        existing.category = tx.category;
+      }
     }
-    return Array.from(monthSet).sort((a, b) => b.localeCompare(a));
+
+    return Array.from(itemsByKey.values()).sort((a, b) => b.amount - a.amount);
   }, [transactions]);
 
-  const currentMonthIndex = selectedMonth ? availableMonths.indexOf(selectedMonth) : -1;
-
-  const goToPrevMonth = () => {
-    if (!selectedMonth) {
-      if (availableMonths.length > 0) setSelectedMonth(availableMonths[0]);
-    } else if (currentMonthIndex < availableMonths.length - 1) {
-      setSelectedMonth(availableMonths[currentMonthIndex + 1]);
-    }
-  };
-
-  const goToNextMonth = () => {
-    if (selectedMonth && currentMonthIndex > 0) {
-      setSelectedMonth(availableMonths[currentMonthIndex - 1]);
-    } else if (selectedMonth && currentMonthIndex === 0) {
-      setSelectedMonth('');
-    }
-  };
-
-  const getMonthLabel = (monthKey: string) => {
-    const d = dayjs(monthKey + '-01');
-    return `${getHebrewMonthName(d.month())} ${d.year()}`;
-  };
-
-  // Filter by month
-  const filteredTransactions = selectedMonth
-    ? transactions.filter(tx => dayjs(tx.date).format('YYYY-MM') === selectedMonth)
-    : transactions;
-
-  // Group by category
   const groupedByCategory = useMemo(() => {
-    const groups: Record<string, { category: Transaction['category']; transactions: Transaction[]; total: number }> = {};
+    const groups: Record<string, { category: Transaction['category']; items: RecurringItem[]; total: number }> = {};
 
-    for (const tx of filteredTransactions) {
-      const key = tx.categoryId || 'uncategorized';
-      if (!groups[key]) {
-        groups[key] = { category: tx.category, transactions: [], total: 0 };
+    for (const item of recurringItems) {
+      const categoryKey = item.categoryId || 'uncategorized';
+      if (!groups[categoryKey]) {
+        groups[categoryKey] = {
+          category: item.category,
+          items: [],
+          total: 0
+        };
       }
-      groups[key].transactions.push(tx);
-      groups[key].total += parseFloat(tx.amount);
+      groups[categoryKey].items.push(item);
+      groups[categoryKey].total += item.amount;
     }
 
-    return Object.entries(groups).sort(([, a], [, b]) => a.total - b.total);
-  }, [filteredTransactions]);
+    return Object.entries(groups).sort(([, a], [, b]) => b.total - a.total);
+  }, [recurringItems]);
 
-  // Summary stats
-  const totalExpenses = filteredTransactions
-    .filter(tx => parseFloat(tx.amount) < 0)
-    .reduce((sum, tx) => sum + Math.abs(parseFloat(tx.amount)), 0);
+  const monthlyFixedTotal = recurringItems.reduce((sum, item) => sum + item.amount, 0);
+  const fixedCategoriesCount = groupedByCategory.length;
+  const remainingForVariable = averageMonthlyIncome - monthlyFixedTotal;
 
-  const uniqueExpenses = new Set(
-    filteredTransactions
-      .filter(tx => parseFloat(tx.amount) < 0)
-      .map(tx => tx.description.toLowerCase().trim())
-  ).size;
-
-  // --- Handlers ---
-  const startEditingNote = (id: string, currentNote: string | null) => {
-    setEditingNoteId(id);
-    setNoteValue(currentNote || '');
-  };
-
-  const handleNoteSave = async (transactionId: string) => {
+  const handleRemoveRecurringItem = async (item: RecurringItem) => {
     try {
-      await fetch(`/api/transactions/${transactionId}/notes`, {
+      const response = await fetch(`/api/transactions/${item.representativeId}/recurring`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes: noteValue.trim() || null }),
-      });
-      setTransactions(prev => prev.map(tx =>
-        tx.id === transactionId ? { ...tx, notes: noteValue.trim() || null } : tx
-      ));
-      showToast('הערה נשמרה', 'success');
-    } catch {
-      showToast('שגיאה בשמירת הערה', 'error');
-    } finally {
-      setEditingNoteId(null);
-    }
-  };
-
-  const handleRemoveRecurring = async (transactionId: string) => {
-    try {
-      const response = await fetch(`/api/transactions/${transactionId}/recurring`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isRecurring: false, learnFromThis: false }),
+        body: JSON.stringify({
+          isRecurring: false,
+          learnFromThis: false,
+          applyToIdentical: true
+        }),
       });
       if (!response.ok) throw new Error('Failed');
 
-      setTransactions(prev => prev.filter(tx => tx.id !== transactionId));
-      showToast('הוסר מהוצאות קבועות', 'success');
+      const result = await response.json();
+      const removedCount = (result.updatedIdentical || 0) + 1;
+
+      setTransactions(prev => prev.filter(tx => getRecurringItemKey(tx) !== item.key));
+      showToast(`הוסר מהוצאות קבועות (${removedCount} תנועות)`, 'success');
     } catch {
       showToast('שגיאה בעדכון', 'error');
     }
@@ -152,60 +147,41 @@ export function RecurringExpensesList({ transactions: initialTransactions, categ
 
   return (
     <div className="space-y-6">
-      {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <SummaryCard
-          title="סה״כ הוצאות קבועות"
-          value={totalExpenses}
+          title="סה״כ התחייבות חודשית"
+          value={monthlyFixedTotal}
           type="expense"
         />
         <SummaryCard
-          title="מספר הוצאות קבועות"
-          value={uniqueExpenses}
+          title="נשאר למשתנות"
+          value={remainingForVariable}
+          type={remainingForVariable >= 0 ? 'income' : 'expense'}
+        />
+        <SummaryCard
+          title="מספר התחייבויות קבועות"
+          value={recurringItems.length}
           type="balance"
+          format="number"
+        />
+        <SummaryCard
+          title="מספר קטגוריות קבועות"
+          value={fixedCategoriesCount}
+          type="balance"
+          format="number"
         />
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm">
-        {/* Month Navigation */}
-        {availableMonths.length > 0 && (
-          <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={goToPrevMonth}
-                disabled={!selectedMonth && availableMonths.length === 0 || (selectedMonth !== '' && currentMonthIndex >= availableMonths.length - 1)}
-                className="p-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronRight className="h-5 w-5 text-gray-600" />
-              </button>
-              <div className="flex items-center gap-2 min-w-[160px] justify-center">
-                <CalendarDays className="h-4 w-4 text-gray-500" />
-                <span className="text-sm font-semibold text-gray-800">
-                  {selectedMonth ? getMonthLabel(selectedMonth) : 'כל החודשים'}
-                </span>
-              </div>
-              <button
-                onClick={goToNextMonth}
-                disabled={!selectedMonth}
-                className="p-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronLeft className="h-5 w-5 text-gray-600" />
-              </button>
-            </div>
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="text-sm px-3 py-1.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">כל החודשים</option>
-              {availableMonths.map(m => (
-                <option key={m} value={m}>{getMonthLabel(m)}</option>
-              ))}
-            </select>
-          </div>
-        )}
+      <div className="text-sm text-gray-500">
+        חישוב &quot;נשאר למשתנות&quot; מבוסס על ממוצע הכנסות חודשי של {incomeMonths} חודשים.
+      </div>
 
-        {/* Grouped by category */}
+      <div className="bg-white rounded-xl shadow-sm">
+        <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
+          <h2 className="font-semibold text-gray-900">פירוט התחייבויות קבועות חודשיות</h2>
+          <span className="text-sm text-gray-600">{recurringItems.length} התחייבויות</span>
+        </div>
+
         <div className="p-4 space-y-4">
           {groupedByCategory.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
@@ -217,15 +193,11 @@ export function RecurringExpensesList({ transactions: initialTransactions, categ
             </div>
           ) : (
             groupedByCategory.map(([categoryKey, data]) => {
-              const isExpense = data.total < 0;
               const isUncategorized = categoryKey === 'uncategorized';
 
               return (
                 <div key={categoryKey} className="border rounded-lg overflow-hidden">
-                  {/* Category Header */}
-                  <div className={`p-4 flex items-center justify-between ${
-                    isUncategorized ? 'bg-orange-50' : 'bg-gray-50'
-                  }`}>
+                  <div className={`p-4 flex items-center justify-between ${isUncategorized ? 'bg-orange-50' : 'bg-gray-50'}`}>
                     <div className="flex items-center gap-3">
                       {data.category ? (
                         <span
@@ -243,83 +215,40 @@ export function RecurringExpensesList({ transactions: initialTransactions, categ
                         <h3 className="font-semibold text-gray-900">
                           {data.category?.name || 'לא מסווג'}
                         </h3>
-                        <p className="text-sm text-gray-500">
-                          {data.transactions.length} הוצאות קבועות
-                        </p>
+                        <p className="text-sm text-gray-500">{data.items.length} התחייבויות קבועות</p>
                       </div>
                     </div>
                     <div className="text-left">
-                      <p className={`text-xl font-bold ${isExpense ? 'text-red-600' : 'text-green-600'}`}>
-                        {isExpense ? '' : '+'}{formatCurrency(Math.abs(data.total))}
-                      </p>
+                      <p className="text-xl font-bold text-red-600">{formatCurrency(data.total)}</p>
                     </div>
                   </div>
 
-                  {/* Transactions */}
                   <div className="divide-y divide-gray-100">
-                    {data.transactions.map(tx => {
-                      const amount = parseFloat(tx.amount);
-                      const txIsExpense = amount < 0;
-
-                      return (
-                        <div key={tx.id} className="group px-4 py-3 flex items-start justify-between hover:bg-gray-50">
-                          <div className="flex items-start gap-3 flex-1 min-w-0">
-                            <Repeat className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-gray-900 truncate">
-                                  {tx.description}
-                                </span>
-                                <span className="text-xs text-gray-400 flex-shrink-0">
-                                  {formatDate(tx.date)}
-                                </span>
-                              </div>
-                              {/* Note */}
-                              {editingNoteId === tx.id ? (
-                                <input
-                                  type="text"
-                                  value={noteValue}
-                                  onChange={(e) => setNoteValue(e.target.value)}
-                                  onBlur={() => handleNoteSave(tx.id)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleNoteSave(tx.id);
-                                    if (e.key === 'Escape') setEditingNoteId(null);
-                                  }}
-                                  className="mt-0.5 text-xs text-gray-500 border-b border-gray-300 focus:border-blue-500 outline-none w-full bg-transparent"
-                                  autoFocus
-                                  placeholder="הוסף הערה..."
-                                />
-                              ) : (
-                                <p
-                                  className="mt-0.5 text-xs text-gray-400 cursor-pointer hover:text-gray-600 flex items-center gap-1"
-                                  onClick={() => startEditingNote(tx.id, tx.notes)}
-                                >
-                                  {tx.notes ? (
-                                    <>{tx.notes}</>
-                                  ) : (
-                                    <span className="opacity-0 group-hover:opacity-100">
-                                      <MessageSquare className="h-3 w-3 inline" /> הוסף הערה
-                                    </span>
-                                  )}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3 flex-shrink-0">
-                            <span className={`text-sm font-semibold ${txIsExpense ? 'text-red-600' : 'text-green-600'}`}>
-                              {txIsExpense ? '' : '+'}{formatCurrency(Math.abs(amount))}
-                            </span>
-                            <button
-                              onClick={() => handleRemoveRecurring(tx.id)}
-                              className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                              title="הסר מהוצאות קבועות"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
+                    {data.items.map((item) => (
+                      <div key={item.key} className="group px-4 py-3 flex items-start justify-between hover:bg-gray-50">
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          <Repeat className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-gray-900 truncate">{item.description}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              חיוב אחרון: {formatDate(item.lastDate)} | הופיע {item.occurrences} פעמים בהיסטוריה
+                            </p>
                           </div>
                         </div>
-                      );
-                    })}
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <span className="text-sm font-semibold text-red-600">
+                            {formatCurrency(item.amount)}
+                          </span>
+                          <button
+                            onClick={() => handleRemoveRecurringItem(item)}
+                            className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                            title="הסר מהוצאות קבועות"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               );
@@ -327,17 +256,12 @@ export function RecurringExpensesList({ transactions: initialTransactions, categ
           )}
         </div>
 
-        {/* Summary footer */}
-        {filteredTransactions.length > 0 && (
+        {recurringItems.length > 0 && (
           <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
-            <span className="text-sm text-gray-600">
-              {filteredTransactions.length} הוצאות קבועות
-            </span>
+            <span className="text-sm text-gray-600">{fixedCategoriesCount} קטגוריות קבועות</span>
             <span className="text-sm">
-              <span className="text-gray-500">סה״כ: </span>
-              <span className="font-semibold text-red-600">
-                {formatCurrency(totalExpenses)}
-              </span>
+              <span className="text-gray-500">סה״כ התחייבות חודשית: </span>
+              <span className="font-semibold text-red-600">{formatCurrency(monthlyFixedTotal)}</span>
             </span>
           </div>
         )}

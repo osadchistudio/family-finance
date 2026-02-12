@@ -25,6 +25,38 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Recurring expenses page switched to monthly-obligations view
+Why:
+- The recurring expenses page summed every historical occurrence, which inflated totals and did not answer "how much fixed cost starts each month".
+- Users needed one-line-per-obligation (for example a monthly check) and a clear "remaining for variable expenses" indicator.
+- Count cards were showing a currency symbol even for non-currency metrics.
+
+What changed:
+- Recurring list now deduplicates recurring expenses into monthly obligations by:
+  - category + normalized description + absolute amount.
+- Each fixed obligation appears once (not once per month history), with:
+  - monthly amount,
+  - last charge date,
+  - number of historical occurrences.
+- Added monthly planning summary cards:
+  - total monthly fixed obligations,
+  - remaining for variable expenses (`average monthly income - fixed obligations`),
+  - number of fixed obligations,
+  - number of fixed categories.
+- Added numeric display mode to `SummaryCard` to render counts without `₪`.
+- Removing a fixed obligation from this page now removes recurring flag for all identical transactions (same category + description + amount), not only one row.
+- Category section now reflects all categories that have unique fixed obligations.
+
+Files touched:
+- `/src/components/recurring/RecurringExpensesList.tsx`
+- `/src/app/recurring/page.tsx`
+- `/src/app/api/transactions/[id]/recurring/route.ts`
+- `/src/components/dashboard/SummaryCard.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Dashboard switched to general monthly averages view
 Why:
 - The dashboard showed "current month" values, while users needed a general financial snapshot.

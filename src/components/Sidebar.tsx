@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Upload, List, CalendarDays, Repeat, FolderOpen, Lightbulb, Settings, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Upload, List, CalendarDays, Repeat, FolderOpen, Lightbulb, Settings, Menu, X, LogOut } from 'lucide-react';
 
 const navigation = [
   { name: 'לוח בקרה', href: '/', icon: LayoutDashboard },
@@ -19,6 +19,14 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      window.location.href = '/login';
+    }
+  };
 
   useEffect(() => {
     setMobileOpen(false);
@@ -89,7 +97,14 @@ export function Sidebar() {
             </button>
           </div>
           {navContent}
-          <div className="border-t p-4">
+          <div className="border-t p-4 space-y-3">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+            >
+              <LogOut className="h-4 w-4" />
+              התנתק
+            </button>
             <p className="text-xs text-gray-500 text-center">
               Family Finance v1.0
             </p>
@@ -104,7 +119,14 @@ export function Sidebar() {
             <h1 className="text-xl font-bold text-gray-800">ניהול הוצאות</h1>
           </div>
           {navContent}
-          <div className="border-t p-4">
+          <div className="border-t p-4 space-y-3">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+            >
+              <LogOut className="h-4 w-4" />
+              התנתק
+            </button>
             <p className="text-xs text-gray-500 text-center">
               Family Finance v1.0
             </p>

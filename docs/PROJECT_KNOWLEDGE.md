@@ -25,6 +25,43 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Added login protection for public URL access
+Why:
+- The app is on a public URL and needed a basic access gate to block unwanted/bot browsing.
+- Requirement was a single username/password (not a full multi-user system).
+
+What changed:
+- Added login screen at `/login` with username + password form.
+- Added auth API endpoints:
+  - `POST /api/auth/login` (sets secure HTTP-only session cookie)
+  - `POST /api/auth/logout` (clears cookie)
+- Added global route protection via middleware:
+  - all app pages and APIs require auth cookie,
+  - public exceptions: `/login`, `/api/auth/login`, `/api/telegram/webhook`, static Next assets.
+- Added logout button in sidebar (desktop + mobile).
+- Added route-aware layout shell to hide app navigation on login page.
+- Auth config supports env overrides:
+  - `AUTH_USERNAME`
+  - `AUTH_PASSWORD_SHA256` (SHA-256 hash of password)
+  - `AUTH_COOKIE_TOKEN`
+- Included safe defaults so the gate works immediately after deploy even without new env vars.
+
+Files touched:
+- `/src/lib/auth.ts`
+- `/src/middleware.ts`
+- `/src/app/api/auth/login/route.ts`
+- `/src/app/api/auth/logout/route.ts`
+- `/src/app/login/page.tsx`
+- `/src/components/auth/LoginForm.tsx`
+- `/src/components/LayoutShell.tsx`
+- `/src/app/layout.tsx`
+- `/src/components/Sidebar.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- Recommended: set auth env vars in production `.env` and copy into `.next/standalone/.env` during deploy.
+- No DB migration needed.
+
 ### 2026-02-12 - Full responsive/mobile layout pass across core screens
 Why:
 - The app was desktop-first and parts of the UI were hard to use on phones (fixed sidebar overlap, crowded filters, wide tables).

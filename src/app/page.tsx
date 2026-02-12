@@ -2,13 +2,14 @@ import { prisma } from '@/lib/prisma';
 import { SummaryCard } from '@/components/dashboard/SummaryCard';
 import { ExpenseChart } from '@/components/dashboard/ExpenseChart';
 import { CategoryPieChart } from '@/components/dashboard/CategoryPieChart';
+import { CategoryAveragesList } from '@/components/dashboard/CategoryAveragesList';
 import { RecentTransactions } from '@/components/dashboard/RecentTransactions';
 import dayjs from 'dayjs';
 import { Decimal } from 'decimal.js';
 
 async function getAnalyticsData() {
   const months = 6;
-  const startDate = dayjs().subtract(months, 'month').startOf('month').toDate();
+  const startDate = dayjs().subtract(months - 1, 'month').startOf('month').toDate();
   const endDate = dayjs().endOf('month').toDate();
 
   const transactions = await prisma.transaction.findMany({
@@ -22,6 +23,8 @@ async function getAnalyticsData() {
   // Calculate monthly totals
   const monthlyData: Record<string, { income: Decimal; expense: Decimal }> = {};
   const categoryTotals: Record<string, { name: string; total: Decimal; color: string; icon: string }> = {};
+  let totalIncome = new Decimal(0);
+  let totalExpense = new Decimal(0);
 
   for (const tx of transactions) {
     const monthKey = dayjs(tx.date).format('YYYY-MM');
@@ -33,8 +36,10 @@ async function getAnalyticsData() {
 
     if (amount.greaterThan(0)) {
       monthlyData[monthKey].income = monthlyData[monthKey].income.plus(amount);
+      totalIncome = totalIncome.plus(amount);
     } else {
       monthlyData[monthKey].expense = monthlyData[monthKey].expense.plus(amount.abs());
+      totalExpense = totalExpense.plus(amount.abs());
     }
 
     if (tx.category && amount.lessThan(0)) {
@@ -50,9 +55,8 @@ async function getAnalyticsData() {
     }
   }
 
-  // Current month stats
-  const currentMonth = dayjs().format('YYYY-MM');
-  const currentMonthData = monthlyData[currentMonth] || { income: new Decimal(0), expense: new Decimal(0) };
+  // Use only months that actually have transactions to avoid skewed averages.
+  const monthsWithData = Math.max(1, Object.keys(monthlyData).length);
 
   // Monthly trends
   const monthlyTrends = [];
@@ -75,16 +79,22 @@ async function getAnalyticsData() {
   const categoryBreakdown = Object.values(categoryTotals)
     .map(cat => ({
       name: cat.name,
-      value: cat.total.toNumber(),
+      value: cat.total.div(monthsWithData).toNumber(),
       color: cat.color,
       icon: cat.icon
     }))
     .sort((a, b) => b.value - a.value);
 
+  const averageMonthlyIncome = totalIncome.div(monthsWithData).toNumber();
+  const averageMonthlyExpense = totalExpense.div(monthsWithData).toNumber();
+  const averageMonthlyBalance = averageMonthlyIncome - averageMonthlyExpense;
+
   return {
-    currentMonthIncome: currentMonthData.income.toNumber(),
-    currentMonthExpense: currentMonthData.expense.toNumber(),
-    currentMonthBalance: currentMonthData.income.minus(currentMonthData.expense).toNumber(),
+    averageMonthlyIncome,
+    averageMonthlyExpense,
+    averageMonthlyBalance,
+    averageMonthlySavings: Math.max(0, averageMonthlyBalance),
+    monthsWithData,
     monthlyTrends,
     categoryBreakdown
   };
@@ -119,31 +129,32 @@ export default async function HomePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">לוח בקרה</h1>
-        <p className="text-sm text-gray-500">
-          {dayjs().format('DD/MM/YYYY')}
-        </p>
+        <div className="text-sm text-gray-500 text-left">
+          <p>{dayjs().format('DD/MM/YYYY')}</p>
+          <p>ממוצע חודשי לפי {analytics.monthsWithData} חודשים</p>
+        </div>
       </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard
-          title="הכנסות החודש"
-          value={analytics.currentMonthIncome}
+          title="ממוצע הכנסות חודשי"
+          value={analytics.averageMonthlyIncome}
           type="income"
         />
         <SummaryCard
-          title="הוצאות החודש"
-          value={analytics.currentMonthExpense}
+          title="ממוצע הוצאות חודשי"
+          value={analytics.averageMonthlyExpense}
           type="expense"
         />
         <SummaryCard
-          title="יתרה החודש"
-          value={analytics.currentMonthBalance}
+          title="ממוצע יתרה חודשית"
+          value={analytics.averageMonthlyBalance}
           type="balance"
         />
         <SummaryCard
-          title="חיסכון"
-          value={Math.max(0, analytics.currentMonthBalance)}
+          title="ממוצע חיסכון חודשי"
+          value={analytics.averageMonthlySavings}
           type="savings"
         />
       </div>
@@ -153,6 +164,8 @@ export default async function HomePage() {
         <ExpenseChart data={analytics.monthlyTrends} />
         <CategoryPieChart data={analytics.categoryBreakdown} />
       </div>
+
+      <CategoryAveragesList data={analytics.categoryBreakdown} />
 
       {/* Recent Transactions */}
       <RecentTransactions transactions={recentTransactions} />

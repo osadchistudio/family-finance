@@ -20,7 +20,7 @@ export function CategoryPieChart({ data }: CategoryPieChartProps) {
   if (data.length === 0) {
     return (
       <div className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">התפלגות לפי קטגוריה</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">ממוצע הוצאות חודשי לפי קטגוריה</h3>
         <div className="h-64 flex items-center justify-center text-gray-500">
           אין נתונים להצגה
         </div>
@@ -30,7 +30,7 @@ export function CategoryPieChart({ data }: CategoryPieChartProps) {
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">התפלגות לפי קטגוריה</h3>
+      <h3 className="text-lg font-semibold text-gray-900 mb-4">ממוצע הוצאות חודשי לפי קטגוריה</h3>
       <div className="flex">
         <div className="w-1/2" style={{ height: 256 }}>
           <ResponsiveContainer width="100%" height={256}>
@@ -49,7 +49,7 @@ export function CategoryPieChart({ data }: CategoryPieChartProps) {
                 ))}
               </Pie>
               <Tooltip
-                formatter={(value) => formatCurrency(Number(value))}
+                formatter={(value) => `${formatCurrency(Number(value))} בממוצע לחודש`}
                 contentStyle={{
                   backgroundColor: 'white',
                   border: '1px solid #E5E7EB',
@@ -71,9 +71,10 @@ export function CategoryPieChart({ data }: CategoryPieChartProps) {
                   />
                   <span className="text-sm text-gray-700">{category.icon} {category.name}</span>
                 </div>
-                <span className="text-sm font-medium text-gray-900">
-                  {((category.value / total) * 100).toFixed(0)}%
-                </span>
+                <div className="text-left">
+                  <p className="text-sm font-medium text-gray-900">{formatCurrency(category.value)}</p>
+                  <p className="text-xs text-gray-500">{((category.value / total) * 100).toFixed(0)}%</p>
+                </div>
               </div>
             ))}
           </div>

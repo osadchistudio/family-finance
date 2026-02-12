@@ -25,6 +25,27 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Dashboard switched to general monthly averages view
+Why:
+- The dashboard showed "current month" values, while users needed a general financial snapshot.
+- Needed explicit monthly averages for income/expenses/balance and average spend by category.
+
+What changed:
+- Dashboard summary cards now show monthly averages (income, expense, balance, savings) instead of only current-month totals.
+- Monthly average base is computed from months that actually have transactions, preventing under-reporting when historical data is partial.
+- Category chart values now represent average monthly spend per category.
+- Added a dedicated bottom section listing average monthly spend by category (amount + share).
+- Fixed dashboard analytics query window to align with the displayed 6-month trend range.
+
+Files touched:
+- `/src/app/page.tsx`
+- `/src/components/dashboard/CategoryPieChart.tsx`
+- `/src/components/dashboard/CategoryAveragesList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Optional "update similar transactions" toggle on manual category change
 Why:
 - Automatic propagation by identical description is useful in many cases, but can be wrong for generic descriptions (e.g., transfers with different business meaning).

@@ -25,6 +25,24 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Search clear button + AI button visible on every transaction row
+Why:
+- Users needed one-click clearing of search input without selecting text manually.
+- Users expected to see per-transaction AI categorization action on every row.
+
+What changed:
+- Added inline `X` clear control in the transactions search input to reset search immediately.
+- Per-row AI categorization button now appears for all rows in the actions column (not only uncategorized rows).
+- Single-transaction AI endpoint now allows re-checking categorized rows; when AI returns same category, it returns an informative no-change message.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/app/api/transactions/[id]/auto-categorize/route.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Category change now auto-propagates to identical transactions
 Why:
 - Users wanted a manual category fix on one transaction to update all identical merchant transactions automatically.

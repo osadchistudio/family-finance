@@ -34,14 +34,6 @@ export async function POST(
       );
     }
 
-    if (transaction.categoryId) {
-      return NextResponse.json({
-        success: true,
-        categorized: false,
-        message: 'העסקה כבר מסווגת',
-      });
-    }
-
     const categories = await prisma.category.findMany({
       include: {
         keywords: true,
@@ -70,6 +62,20 @@ export async function POST(
         success: true,
         categorized: false,
         message: 'ה-AI החזיר קטגוריה לא זמינה',
+      });
+    }
+
+    if (transaction.categoryId === category.id) {
+      return NextResponse.json({
+        success: true,
+        categorized: false,
+        message: 'התנועה כבר משויכת לקטגוריה הזו',
+        category: {
+          id: category.id,
+          name: category.name,
+          icon: category.icon || '📁',
+          color: category.color || '#6B7280',
+        },
       });
     }
 
@@ -117,4 +123,3 @@ export async function POST(
     );
   }
 }
-

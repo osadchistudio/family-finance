@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { formatCurrency, formatDate, getHebrewMonthName } from '@/lib/formatters';
-import { Search, LayoutList, PieChart, Wand2, Loader2, Layers, ChevronRight, ChevronLeft, CalendarDays, Repeat, MessageSquare, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { Search, LayoutList, PieChart, Wand2, Loader2, Layers, ChevronRight, ChevronLeft, CalendarDays, Repeat, MessageSquare, ChevronDown, ChevronUp, Trash2, X } from 'lucide-react';
 import { CategorySelector } from './CategorySelector';
 import { showToast } from '@/components/ui/Toast';
 import dayjs from 'dayjs';
@@ -125,6 +125,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
   const [autoCategorizingTxId, setAutoCategorizingTxId] = useState<string | null>(null);
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Notes inline editing
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -469,7 +470,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
   };
 
   const handleAutoCategorizeSingle = async (tx: Transaction) => {
-    if (autoCategorizingTxId || deletingTransactionId || tx.categoryId) return;
+    if (autoCategorizingTxId || deletingTransactionId) return;
 
     setAutoCategorizingTxId(tx.id);
     try {
@@ -516,12 +517,26 @@ export function TransactionList({ transactions: initialTransactions, categories:
       <div className="p-4 border-b flex flex-wrap gap-4">
         <div className="flex-1 min-w-[200px] relative">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+          {searchTerm.trim() && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm('');
+                searchInputRef.current?.focus();
+              }}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+              title="נקה חיפוש"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
           <input
+            ref={searchInputRef}
             type="text"
             placeholder="חיפוש תנועות או סכום..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pr-10 pl-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full pr-10 pl-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
         <div className="min-w-[180px]">
@@ -779,20 +794,18 @@ export function TransactionList({ transactions: initialTransactions, categories:
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          {!tx.categoryId && (
-                            <button
-                              onClick={() => handleAutoCategorizeSingle(tx)}
-                              disabled={autoCategorizingTxId === tx.id || deletingTransactionId !== null}
-                              className="inline-flex p-1.5 rounded-md text-purple-500 hover:text-purple-700 hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                              title="AI: סווג רק את התנועה הזו"
-                            >
-                              {autoCategorizingTxId === tx.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Wand2 className="h-4 w-4" />
-                              )}
-                            </button>
-                          )}
+                          <button
+                            onClick={() => handleAutoCategorizeSingle(tx)}
+                            disabled={autoCategorizingTxId === tx.id || deletingTransactionId !== null}
+                            className="inline-flex p-1.5 rounded-md text-purple-500 hover:text-purple-700 hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            title="AI: סווג רק את התנועה הזו"
+                          >
+                            {autoCategorizingTxId === tx.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Wand2 className="h-4 w-4" />
+                            )}
+                          </button>
                           <button
                             onClick={() => handleDeleteTransaction(tx)}
                             disabled={deletingTransactionId === tx.id || autoCategorizingTxId !== null}

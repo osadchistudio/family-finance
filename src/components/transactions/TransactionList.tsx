@@ -123,6 +123,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const [selectedMonth, setSelectedMonth] = useState<string>(''); // '' = all, 'YYYY-MM' = specific
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
+  const [autoCategorizingTxId, setAutoCategorizingTxId] = useState<string | null>(null);
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
 
   // Notes inline editing
@@ -445,7 +446,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
   };
 
   const handleDeleteTransaction = async (tx: Transaction) => {
-    if (deletingTransactionId) return;
+    if (deletingTransactionId || autoCategorizingTxId) return;
 
     const amount = parseFloat(tx.amount);
     const amountText = formatCurrency(Math.abs(Number.isFinite(amount) ? amount : 0));
@@ -465,6 +466,48 @@ export function TransactionList({ transactions: initialTransactions, categories:
       showToast('שגיאה במחיקת תנועה', 'error');
     } finally {
       setDeletingTransactionId(null);
+    }
+  };
+
+  const handleAutoCategorizeSingle = async (tx: Transaction) => {
+    if (autoCategorizingTxId || deletingTransactionId || tx.categoryId) return;
+
+    setAutoCategorizingTxId(tx.id);
+    try {
+      const response = await fetch(`/api/transactions/${tx.id}/auto-categorize`, {
+        method: 'POST',
+      });
+      if (!response.ok) throw new Error('Failed');
+
+      const result = await response.json();
+
+      if (result.categorized && result.category) {
+        const category = result.category as {
+          id: string;
+          name: string;
+          icon: string;
+          color: string;
+        };
+
+        setTransactions(prev => prev.map(item => (
+          item.id === tx.id
+            ? {
+                ...item,
+                categoryId: category.id,
+                category,
+                isAutoCategorized: true,
+              }
+            : item
+        )));
+
+        showToast(`סווג אוטומטית ל"${category.name}"`, 'learning');
+      } else {
+        showToast(result.message || 'לא נמצאה קטגוריה מתאימה', 'info');
+      }
+    } catch {
+      showToast('שגיאה בסיווג אוטומטי לתנועה', 'error');
+    } finally {
+      setAutoCategorizingTxId(null);
     }
   };
 
@@ -736,14 +779,30 @@ export function TransactionList({ transactions: initialTransactions, categories:
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <button
-                          onClick={() => handleDeleteTransaction(tx)}
-                          disabled={deletingTransactionId === tx.id}
-                          className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                          title="מחק תנועה"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          {!tx.categoryId && (
+                            <button
+                              onClick={() => handleAutoCategorizeSingle(tx)}
+                              disabled={autoCategorizingTxId === tx.id || deletingTransactionId !== null}
+                              className="inline-flex p-1.5 rounded-md text-purple-500 hover:text-purple-700 hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                              title="AI: סווג רק את התנועה הזו"
+                            >
+                              {autoCategorizingTxId === tx.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Wand2 className="h-4 w-4" />
+                              )}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeleteTransaction(tx)}
+                            disabled={deletingTransactionId === tx.id || autoCategorizingTxId !== null}
+                            className="inline-flex p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            title="מחק תנועה"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

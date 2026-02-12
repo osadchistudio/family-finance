@@ -25,6 +25,29 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Per-transaction AI auto-categorization action
+Why:
+- Users needed to run AI categorization on a single uncategorized transaction without triggering the global "categorize all" action.
+
+What changed:
+- Added a new API endpoint for single-transaction AI categorization:
+  - `/api/transactions/[id]/auto-categorize`
+- Added a per-row AI button (magic wand) in transactions table actions for uncategorized rows only.
+- On success, the row updates immediately with assigned category and `isAutoCategorized=true`.
+- Shared AI categorization logic moved to:
+  - `/src/lib/autoCategorize.ts`
+  and reused by both global and single-item flows.
+
+Files touched:
+- `/src/lib/autoCategorize.ts`
+- `/src/app/api/transactions/auto-categorize/route.ts`
+- `/src/app/api/transactions/[id]/auto-categorize/route.ts`
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Numeric search now matches both income and expense amounts
 Why:
 - Numeric search previously matched only expenses and missed matching income rows with the same amount.

@@ -1,0 +1,120 @@
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import {
+  extractKeyword,
+  findCategoryByName,
+  identifyDescriptions,
+  resolveAnthropicApiKey,
+} from '@/lib/autoCategorize';
+
+/**
+ * Auto-categorize a single transaction by id
+ */
+export async function POST(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+
+    const transaction = await prisma.transaction.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        description: true,
+        amount: true,
+        categoryId: true,
+      },
+    });
+
+    if (!transaction) {
+      return NextResponse.json(
+        { error: 'העסקה לא נמצאה' },
+        { status: 404 }
+      );
+    }
+
+    if (transaction.categoryId) {
+      return NextResponse.json({
+        success: true,
+        categorized: false,
+        message: 'העסקה כבר מסווגת',
+      });
+    }
+
+    const categories = await prisma.category.findMany({
+      include: {
+        keywords: true,
+      },
+    });
+
+    const anthropicKey = await resolveAnthropicApiKey();
+    const categorizations = await identifyDescriptions(
+      [transaction.description],
+      categories,
+      anthropicKey
+    );
+
+    const categoryName = categorizations[transaction.description];
+    if (!categoryName) {
+      return NextResponse.json({
+        success: true,
+        categorized: false,
+        message: 'לא נמצאה קטגוריה מתאימה לעסקה הזו',
+      });
+    }
+
+    const category = findCategoryByName(categories, categoryName);
+    if (!category) {
+      return NextResponse.json({
+        success: true,
+        categorized: false,
+        message: 'ה-AI החזיר קטגוריה לא זמינה',
+      });
+    }
+
+    await prisma.transaction.update({
+      where: { id: transaction.id },
+      data: {
+        categoryId: category.id,
+        isAutoCategorized: true,
+      },
+    });
+
+    const keyword = extractKeyword(transaction.description);
+    if (keyword) {
+      try {
+        await prisma.categoryKeyword.create({
+          data: {
+            categoryId: category.id,
+            keyword: keyword.toLowerCase(),
+            isExact: false,
+            priority: 0,
+          },
+        });
+      } catch {
+        // Keyword might already exist
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      categorized: true,
+      transactionId: transaction.id,
+      category: {
+        id: category.id,
+        name: category.name,
+        icon: category.icon || '📁',
+        color: category.color || '#6B7280',
+      },
+      keywordAdded: keyword?.toLowerCase() || null,
+    });
+  } catch (error) {
+    console.error('Single auto-categorize error:', error);
+    return NextResponse.json(
+      { error: 'שגיאה בסיווג אוטומטי לתנועה' },
+      { status: 500 }
+    );
+  }
+}
+

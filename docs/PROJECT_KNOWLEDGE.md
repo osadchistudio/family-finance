@@ -25,6 +25,33 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Login "Remember me" + brute-force protection
+Why:
+- Needed persistent login only when user explicitly requests it.
+- Needed defensive protection against bot/script password guessing on the public URL.
+
+What changed:
+- Login form now includes `זכור אותי` checkbox (default enabled).
+- Login API now accepts `rememberMe`:
+  - `true` => persistent auth cookie (14 days),
+  - `false` => session cookie (expires when browser is closed).
+- Added IP-based login rate limit (in-memory, server-side):
+  - window: 15 minutes,
+  - max failed attempts in window: 7,
+  - temporary block duration after limit: 30 minutes.
+- Wrong-credentials response now includes remaining attempts until temporary block.
+- Rate-limited responses return HTTP `429` and `Retry-After` header.
+
+Files touched:
+- `/src/components/auth/LoginForm.tsx`
+- `/src/app/api/auth/login/route.ts`
+- `/src/lib/loginRateLimit.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- Rate-limit state is in-memory and resets on process restart/redeploy.
+- No DB migration needed.
+
 ### 2026-02-12 - Added login protection for public URL access
 Why:
 - The app is on a public URL and needed a basic access gate to block unwanted/bot browsing.

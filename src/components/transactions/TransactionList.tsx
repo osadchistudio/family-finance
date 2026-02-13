@@ -122,10 +122,14 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const [selectedAmountType, setSelectedAmountType] = useState<AmountTypeFilter>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>(''); // '' = all, 'YYYY-MM' = specific
   const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState<Set<string>>(new Set());
+  const [bulkCategoryId, setBulkCategoryId] = useState('');
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
   const [autoCategorizingTxId, setAutoCategorizingTxId] = useState<string | null>(null);
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
 
   // Notes inline editing
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -172,6 +176,25 @@ export function TransactionList({ transactions: initialTransactions, categories:
       window.removeEventListener('focus', onFocus);
     };
   }, []);
+
+  useEffect(() => {
+    if (viewMode !== 'list') {
+      setSelectedTransactionIds(new Set());
+      setBulkCategoryId('');
+    }
+  }, [viewMode]);
+
+  useEffect(() => {
+    setSelectedTransactionIds((prev) => {
+      if (prev.size === 0) return prev;
+      const existingIds = new Set(transactions.map((tx) => tx.id));
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (existingIds.has(id)) next.add(id);
+      }
+      return next.size === prev.size ? prev : next;
+    });
+  }, [transactions]);
 
   const toggleCategoryExpanded = (categoryKey: string) => {
     setExpandedCategories(prev => {
@@ -236,6 +259,19 @@ export function TransactionList({ transactions: initialTransactions, categories:
     const matchesMonth = !selectedMonth || dayjs(tx.date).format('YYYY-MM') === selectedMonth;
     return matchesSearch && matchesCategory && matchesAccount && matchesAmountType && matchesMonth;
   });
+
+  const visibleIds = useMemo(
+    () => filteredTransactions.map((tx) => tx.id),
+    [filteredTransactions]
+  );
+  const selectedVisibleCount = visibleIds.filter((id) => selectedTransactionIds.has(id)).length;
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
+  const selectedCount = selectedTransactionIds.size;
+
+  useEffect(() => {
+    if (!selectAllCheckboxRef.current) return;
+    selectAllCheckboxRef.current.indeterminate = selectedVisibleCount > 0 && !allVisibleSelected;
+  }, [selectedVisibleCount, allVisibleSelected]);
 
   // Group transactions by description for grouped view
   const groupedTransactions = useMemo(() => {
@@ -319,6 +355,91 @@ export function TransactionList({ transactions: initialTransactions, categories:
       showToast('שגיאה בזיהוי אוטומטי', 'error');
     } finally {
       setIsAutoCategorizing(false);
+    }
+  };
+
+  const toggleTransactionSelection = (transactionId: string) => {
+    setSelectedTransactionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(transactionId)) {
+        next.delete(transactionId);
+      } else {
+        next.add(transactionId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedTransactionIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        for (const id of visibleIds) next.delete(id);
+      } else {
+        for (const id of visibleIds) next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedTransactionIds(new Set());
+    setBulkCategoryId('');
+  };
+
+  const handleBulkCategoryAssign = async () => {
+    if (selectedCount === 0) return;
+    if (!bulkCategoryId) {
+      showToast('בחר קטגוריה לשיוך', 'info');
+      return;
+    }
+
+    const normalizedCategoryId = bulkCategoryId === 'uncategorized' ? null : bulkCategoryId;
+    const selectedIds = Array.from(selectedTransactionIds);
+
+    setIsBulkUpdating(true);
+    try {
+      const response = await fetch('/api/transactions/bulk-category', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactionIds: selectedIds,
+          categoryId: normalizedCategoryId,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result?.error || 'Bulk update failed');
+
+      const newCategory = normalizedCategoryId
+        ? categories.find((category) => category.id === normalizedCategoryId) || null
+        : null;
+      const mappedCategory = newCategory ? {
+        id: newCategory.id,
+        name: newCategory.name,
+        icon: newCategory.icon || '📁',
+        color: newCategory.color || '#6B7280',
+      } : null;
+      const selectedSet = new Set(selectedIds);
+
+      setTransactions((prev) => prev.map((tx) => {
+        if (!selectedSet.has(tx.id)) return tx;
+        return {
+          ...tx,
+          categoryId: normalizedCategoryId,
+          category: mappedCategory,
+          isAutoCategorized: false,
+        };
+      }));
+
+      const updatedCount = Number(result?.updatedCount || selectedIds.length);
+      showToast(`עודכנו ${updatedCount} תנועות`, 'success');
+      clearSelection();
+    } catch (error) {
+      console.error('Bulk category update error:', error);
+      showToast('שגיאה בעדכון מרוכז של קטגוריה', 'error');
+    } finally {
+      setIsBulkUpdating(false);
     }
   };
 
@@ -651,6 +772,43 @@ export function TransactionList({ transactions: initialTransactions, categories:
           </button>
         )}
 
+        {selectedCount > 0 && (
+          <div className="w-full p-3 rounded-lg border border-blue-200 bg-blue-50 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div className="text-sm text-blue-800">
+              נבחרו {selectedCount} תנועות
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full lg:w-auto">
+              <select
+                value={bulkCategoryId}
+                onChange={(e) => setBulkCategoryId(e.target.value)}
+                className="w-full sm:w-[220px] px-3 py-2 border border-blue-200 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">בחר קטגוריה לשיוך</option>
+                <option value="uncategorized">ללא קטגוריה</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.icon} {cat.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleBulkCategoryAssign}
+                disabled={isBulkUpdating || !bulkCategoryId}
+                className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isBulkUpdating ? 'מעדכן...' : 'שייך לנבחרות'}
+              </button>
+              <button
+                onClick={clearSelection}
+                disabled={isBulkUpdating}
+                className="px-4 py-2 rounded-lg border border-blue-200 text-blue-700 text-sm font-medium hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                נקה בחירה
+              </button>
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* Month Navigation */}
@@ -725,6 +883,13 @@ export function TransactionList({ transactions: initialTransactions, categories:
                   <div key={tx.id} className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-2 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={selectedTransactionIds.has(tx.id)}
+                          onChange={() => toggleTransactionSelection(tx.id)}
+                          className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          aria-label={`בחר תנועה ${tx.description}`}
+                        />
                         <button
                           onClick={() => handleToggleRecurring(tx.id, !tx.isRecurring)}
                           className={`mt-0.5 p-1 rounded hover:bg-gray-100 transition-colors flex-shrink-0 ${
@@ -818,6 +983,16 @@ export function TransactionList({ transactions: initialTransactions, categories:
             <table className="w-full min-w-[900px]">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-3 py-3 text-center">
+                    <input
+                      ref={selectAllCheckboxRef}
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectAllVisible}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      aria-label="בחר הכל"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">תאריך</th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">תיאור</th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">קטגוריה</th>
@@ -829,7 +1004,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
               <tbody className="divide-y divide-gray-100">
                 {filteredTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                       {transactions.length === 0
                         ? 'אין תנועות להצגה. העלה קבצי תנועות כדי להתחיל.'
                         : 'לא נמצאו תנועות התואמות לחיפוש'}
@@ -842,6 +1017,15 @@ export function TransactionList({ transactions: initialTransactions, categories:
 
                     return (
                       <tr key={tx.id} className="group hover:bg-gray-50">
+                        <td className="px-3 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedTransactionIds.has(tx.id)}
+                            onChange={() => toggleTransactionSelection(tx.id)}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            aria-label={`בחר תנועה ${tx.description}`}
+                          />
+                        </td>
                         <td className="px-4 py-3 text-sm text-gray-900">
                           {formatDate(tx.date)}
                         </td>

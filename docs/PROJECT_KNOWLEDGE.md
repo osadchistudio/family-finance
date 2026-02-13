@@ -25,6 +25,33 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Multi-select transactions + bulk category assignment
+Why:
+- Needed a faster workflow to assign the same category to multiple selected transactions at once from the transactions page.
+- Single-row assignment was too slow for cleanup tasks.
+
+What changed:
+- Added multi-select in transactions `רשימה` view:
+  - row checkbox per transaction (mobile + desktop),
+  - desktop "select all visible" checkbox with indeterminate state.
+- Added bulk action bar when rows are selected:
+  - choose target category (`כולל ללא קטגוריה`),
+  - apply category to all selected rows,
+  - clear selection.
+- Bulk assignment is explicit and row-targeted (no merchant-similar propagation).
+- Added new API endpoint:
+  - `PATCH /api/transactions/bulk-category`
+  - validates category and updates selected transactions in one DB operation.
+- Cache invalidation now refreshes transactions, recurring, dashboard, and monthly summary views after bulk update.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/app/api/transactions/bulk-category/route.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-13 - Safer per-row category updates in by-category view
 Why:
 - In `לפי קטגוריה` view, changing one row category could unintentionally propagate to many rows (same/generic descriptions).

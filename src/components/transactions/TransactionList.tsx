@@ -1120,6 +1120,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
                               transactionDescription={tx.description}
                               currentCategory={tx.category}
                               categories={categories as Category[]}
+                              defaultApplyToSimilar={false}
                               onCategoryChange={handleCategoryChange}
                             />
                             <span className={`text-sm font-medium whitespace-nowrap ${txIsExpense ? 'text-red-600' : 'text-green-600'}`}>

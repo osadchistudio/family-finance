@@ -25,6 +25,29 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Safer per-row category updates in by-category view
+Why:
+- In `לפי קטגוריה` view, changing one row category could unintentionally propagate to many rows (same/generic descriptions).
+- User needed precise one-row category change (for example only one `3,850`) without moving unrelated transactions.
+
+What changed:
+- Added `defaultApplyToSimilar` support to category selector component.
+- In `לפי קטגוריה` rows, default is now single-row update (`applyToSimilar=false` by default in that view).
+- Added server-side propagation guard:
+  - if source transaction description is too generic (no merchant signature), similar-propagation is skipped even if requested.
+  - prevents broad accidental reclassification on generic labels (for example standing-order style descriptions).
+- Label text in selector updated from `עדכן תנועות זהות` to `עדכן תנועות דומות`.
+
+Files touched:
+- `/src/components/transactions/CategorySelector.tsx`
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/app/api/transactions/[id]/category/route.ts`
+- `/src/app/api/transactions/[id]/auto-categorize/route.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-13 - Category selector dropdown viewport-clamp fix
 Why:
 - Category selector dropdown could overflow outside the screen edges in transactions UI (especially on mobile / narrow viewport).

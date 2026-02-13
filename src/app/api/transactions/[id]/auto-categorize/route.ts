@@ -8,7 +8,7 @@ import {
   resolveCategoryForDescription,
   resolveOpenAiApiKey,
 } from '@/lib/autoCategorize';
-import { isLikelySameMerchant } from '@/lib/merchantSimilarity';
+import { extractMerchantSignature, isLikelySameMerchant } from '@/lib/merchantSimilarity';
 
 /**
  * Auto-categorize a single transaction by id
@@ -81,40 +81,45 @@ export async function POST(
       currentUpdated = 1;
     }
 
-    const sourceAmount = parseFloat(transaction.amount.toString());
-    const sourceIsExpense = Number.isFinite(sourceAmount) ? sourceAmount < 0 : true;
+    const sourceSignature = extractMerchantSignature(transaction.description);
+    let updatedSimilarIds: string[] = [];
 
-    const candidates = await prisma.transaction.findMany({
-      where: {
-        id: { not: transaction.id },
-        isExcluded: false,
-        NOT: {
-          categoryId: category.id,
-        },
-        ...(sourceIsExpense
-          ? { amount: { lt: 0 } }
-          : { amount: { gt: 0 } }),
-      },
-      select: {
-        id: true,
-        description: true,
-      }
-    });
+    if (sourceSignature) {
+      const sourceAmount = parseFloat(transaction.amount.toString());
+      const sourceIsExpense = Number.isFinite(sourceAmount) ? sourceAmount < 0 : true;
 
-    const updatedSimilarIds = candidates
-      .filter(candidate => isLikelySameMerchant(transaction.description, candidate.description))
-      .map(candidate => candidate.id);
-
-    if (updatedSimilarIds.length > 0) {
-      await prisma.transaction.updateMany({
+      const candidates = await prisma.transaction.findMany({
         where: {
-          id: { in: updatedSimilarIds },
+          id: { not: transaction.id },
+          isExcluded: false,
+          NOT: {
+            categoryId: category.id,
+          },
+          ...(sourceIsExpense
+            ? { amount: { lt: 0 } }
+            : { amount: { gt: 0 } }),
         },
-        data: {
-          categoryId: category.id,
-          isAutoCategorized: true,
-        },
+        select: {
+          id: true,
+          description: true,
+        }
       });
+
+      updatedSimilarIds = candidates
+        .filter(candidate => isLikelySameMerchant(transaction.description, candidate.description))
+        .map(candidate => candidate.id);
+
+      if (updatedSimilarIds.length > 0) {
+        await prisma.transaction.updateMany({
+          where: {
+            id: { in: updatedSimilarIds },
+          },
+          data: {
+            categoryId: category.id,
+            isAutoCategorized: true,
+          },
+        });
+      }
     }
 
     const keyword = extractKeyword(transaction.description);

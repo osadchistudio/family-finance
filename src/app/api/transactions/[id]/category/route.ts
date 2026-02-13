@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { extractKeyword } from '@/lib/keywords';
-import { isLikelySameMerchant } from '@/lib/merchantSimilarity';
+import { extractMerchantSignature, isLikelySameMerchant } from '@/lib/merchantSimilarity';
 
 /**
  * Update transaction category and optionally learn for future
@@ -41,7 +41,10 @@ export async function PATCH(
     let updatedSimilarIds: string[] = [];
     let keywordAdded = null;
 
-    if (applyToSimilar) {
+    const sourceSignature = extractMerchantSignature(transaction.description);
+    const canPropagateToSimilar = applyToSimilar && !!sourceSignature;
+
+    if (canPropagateToSimilar) {
       const sourceAmount = parseFloat(transaction.amount.toString());
       const sourceIsExpense = Number.isFinite(sourceAmount) ? sourceAmount < 0 : true;
 
@@ -119,6 +122,7 @@ export async function PATCH(
       transaction: updated,
       learned: learnFromThis,
       appliedToSimilar: applyToSimilar,
+      propagationSkipped: applyToSimilar && !canPropagateToSimilar,
       updatedSimilar,
       updatedSimilarIds,
       keywordAdded

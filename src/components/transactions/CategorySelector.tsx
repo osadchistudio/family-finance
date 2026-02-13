@@ -16,6 +16,7 @@ interface CategorySelectorProps {
   transactionDescription: string;
   currentCategory: Category | null;
   categories: Category[];
+  defaultApplyToSimilar?: boolean;
   onCategoryChange: (
     transactionId: string,
     categoryId: string,
@@ -29,17 +30,22 @@ export function CategorySelector({
   transactionDescription,
   currentCategory,
   categories,
+  defaultApplyToSimilar = true,
   onCategoryChange,
 }: CategorySelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [learnFromThis, setLearnFromThis] = useState(true);
-  const [applyToSimilar, setApplyToSimilar] = useState(true);
+  const [applyToSimilar, setApplyToSimilar] = useState(defaultApplyToSimilar);
   const [isUpdating, setIsUpdating] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+
+  useEffect(() => {
+    setApplyToSimilar(defaultApplyToSimilar);
+  }, [defaultApplyToSimilar, transactionId]);
 
   // Update dropdown position when opened
   useEffect(() => {
@@ -181,7 +187,7 @@ export function CategorySelector({
             />
             <span className="text-xs text-blue-700 flex items-center gap-1">
               <Copy className="h-3 w-3" />
-              עדכן תנועות זהות
+              עדכן תנועות דומות
             </span>
           </label>
         </div>

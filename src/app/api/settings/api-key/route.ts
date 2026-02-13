@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { encrypt, decrypt, maskApiKey } from '@/lib/encryption';
 
+const API_KEY_SETTING = 'openai_api_key';
+
 // GET - Check if API key exists and return masked version
 export async function GET() {
   try {
     const setting = await prisma.setting.findUnique({
-      where: { key: 'anthropic_api_key' },
+      where: { key: API_KEY_SETTING },
     });
 
     if (!setting) {
@@ -37,9 +39,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate API key format
-    if (!apiKey.startsWith('sk-ant-')) {
+    if (!apiKey.startsWith('sk-')) {
       return NextResponse.json(
-        { error: 'מפתח API לא תקין. המפתח צריך להתחיל ב-sk-ant-' },
+        { error: 'מפתח OpenAI לא תקין. המפתח צריך להתחיל ב-sk-' },
         { status: 400 }
       );
     }
@@ -49,9 +51,9 @@ export async function POST(request: NextRequest) {
 
     // Save to database
     await prisma.setting.upsert({
-      where: { key: 'anthropic_api_key' },
+      where: { key: API_KEY_SETTING },
       update: { value: encryptedKey },
-      create: { key: 'anthropic_api_key', value: encryptedKey },
+      create: { key: API_KEY_SETTING, value: encryptedKey },
     });
 
     return NextResponse.json({
@@ -68,7 +70,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE() {
   try {
     await prisma.setting.delete({
-      where: { key: 'anthropic_api_key' },
+      where: { key: API_KEY_SETTING },
     });
 
     return NextResponse.json({ success: true });

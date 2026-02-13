@@ -88,9 +88,9 @@ export default function SettingsPage() {
             <Key className="h-6 w-6 text-purple-600" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">מפתח API של Anthropic</h2>
+            <h2 className="text-lg font-semibold text-gray-900">מפתח API של OpenAI</h2>
             <p className="text-sm text-gray-500">
-              נדרש לזיהוי אוטומטי חכם של עסקים באמצעות AI
+              משמש לזיהוי אוטומטי חכם של עסקים באמצעות GPT-5-mini
             </p>
           </div>
         </div>
@@ -110,7 +110,7 @@ export default function SettingsPage() {
                   type={showKey ? 'text' : 'password'}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-ant-api03-..."
+                  placeholder="sk-proj-..."
                   className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 font-mono text-sm"
                   dir="ltr"
                 />
@@ -125,12 +125,12 @@ export default function SettingsPage() {
               <p className="mt-2 text-xs text-gray-500">
                 ניתן להשיג מפתח ב-{' '}
                 <a
-                  href="https://console.anthropic.com/settings/keys"
+                  href="https://platform.openai.com/api-keys"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-purple-600 hover:underline"
                 >
-                  console.anthropic.com
+                  platform.openai.com
                 </a>
               </p>
             </div>
@@ -186,7 +186,7 @@ export default function SettingsPage() {
           <h3 className="font-medium text-blue-900 mb-2">מידע על אבטחה</h3>
           <ul className="text-sm text-blue-700 space-y-1">
             <li>• המפתח נשמר בצורה מוצפנת בשרת</li>
-            <li>• המפתח לא נשלח לשום צד שלישי מלבד Anthropic</li>
+            <li>• המפתח לא נשלח לשום צד שלישי מלבד OpenAI</li>
             <li>• ניתן למחוק את המפתח בכל עת</li>
           </ul>
         </div>

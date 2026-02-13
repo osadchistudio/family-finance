@@ -5,7 +5,7 @@ import {
   findCategoryByName,
   identifyDescriptions,
   resolveCategoryForDescription,
-  resolveAnthropicApiKey,
+  resolveOpenAiApiKey,
 } from '@/lib/autoCategorize';
 
 /**
@@ -50,12 +50,12 @@ export async function POST() {
     // Prepare business descriptions for AI
     const uniqueDescriptions = [...new Set(uncategorizedTransactions.map(t => t.description))];
 
-    const anthropicKey = await resolveAnthropicApiKey();
+    const openaiKey = await resolveOpenAiApiKey();
     const descriptionChunks = chunkArray(uniqueDescriptions, 40);
     const categorizations: Record<string, string> = {};
 
     for (const chunk of descriptionChunks) {
-      const chunkResult = await identifyDescriptions(chunk, categories, anthropicKey);
+      const chunkResult = await identifyDescriptions(chunk, categories, openaiKey);
       Object.assign(categorizations, chunkResult);
     }
 

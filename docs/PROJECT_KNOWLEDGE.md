@@ -25,6 +25,38 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Switched AI categorization provider to OpenAI (gpt-5-mini)
+Why:
+- User requested migration from Anthropic to OpenAI and a default model of `gpt-5-mini`.
+- Existing settings/UI/API were hard-wired to Anthropic keys and Claude endpoint.
+
+What changed:
+- Auto-categorization provider switched from Anthropic Messages API to OpenAI Chat Completions API.
+- Default model is now `gpt-5-mini` (configurable via `OPENAI_MODEL` env var).
+- AI key resolution now uses:
+  - DB setting key: `openai_api_key`
+  - env fallback: `OPENAI_API_KEY`
+- Settings API now stores/reads/deletes `openai_api_key` and validates `sk-` format.
+- Settings page was updated from "Anthropic" to "OpenAI", including key placeholder and console link.
+- `.env.example` updated with:
+  - `OPENAI_API_KEY`
+  - `OPENAI_MODEL="gpt-5-mini"`
+- Existing robust auto-categorize matching/chunking logic remains in place and now runs on OpenAI responses.
+
+Files touched:
+- `/src/lib/autoCategorize.ts`
+- `/src/app/api/transactions/auto-categorize/route.ts`
+- `/src/app/api/transactions/[id]/auto-categorize/route.ts`
+- `/src/app/api/settings/api-key/route.ts`
+- `/src/app/settings/page.tsx`
+- `/.env.example`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- To activate AI classification in production, set/save a valid OpenAI API key (`sk-...`) via Settings or `OPENAI_API_KEY` in `.env`.
+- Optional model override: `OPENAI_MODEL`; default remains `gpt-5-mini`.
+- No DB migration needed.
+
 ### 2026-02-12 - Auto-categorize reliability fix for large uncategorized sets
 Why:
 - Auto-categorize could return `0` even with many uncategorized transactions due fragile AI response matching and batch size limitations.

@@ -31,7 +31,7 @@ function tokenize(value: string): string[] {
     .filter((token) => token.length > 1);
 }
 
-function parseClaudeCategorization(content: string): Record<string, string> {
+function parseAiCategorization(content: string): Record<string, string> {
   const cleaned = content
     .replace(/```json/gi, '')
     .replace(/```/g, '')
@@ -159,25 +159,25 @@ export function resolveCategoryForDescription(
   return null;
 }
 
-export async function resolveAnthropicApiKey(): Promise<string | null> {
-  let anthropicKey: string | null = null;
+export async function resolveOpenAiApiKey(): Promise<string | null> {
+  let openaiKey: string | null = null;
 
   try {
     const setting = await prisma.setting.findUnique({
-      where: { key: 'anthropic_api_key' },
+      where: { key: 'openai_api_key' },
     });
     if (setting) {
-      anthropicKey = decrypt(setting.value);
+      openaiKey = decrypt(setting.value);
     }
   } catch {
     // If decryption fails, fallback to env variable
   }
 
-  if (!anthropicKey) {
-    anthropicKey = process.env.ANTHROPIC_API_KEY || null;
+  if (!openaiKey) {
+    openaiKey = process.env.OPENAI_API_KEY || null;
   }
 
-  return anthropicKey;
+  return openaiKey;
 }
 
 export async function identifyDescriptions(
@@ -190,7 +190,7 @@ export async function identifyDescriptions(
   const { includeKeywordFallback = true } = options;
 
   if (apiKey) {
-    const aiResult = await identifyWithClaude(descriptions, categories, apiKey);
+    const aiResult = await identifyWithOpenAI(descriptions, categories, apiKey);
     if (Object.keys(aiResult).length > 0) {
       return aiResult;
     }
@@ -264,14 +264,15 @@ export function extractKeyword(description: string): string | null {
   return words[0];
 }
 
-async function identifyWithClaude(
+async function identifyWithOpenAI(
   descriptions: string[],
   categories: { name: string; nameEn: string | null }[],
   apiKey: string
 ): Promise<Record<string, string>> {
   const categoryList = categories.map(c => c.name).join(', ');
+  const model = process.env.OPENAI_MODEL || 'gpt-5-mini';
 
-  const prompt = `אתה מומחה לזיהוי עסקים ישראליים וסיווגם לקטגוריות.
+  const prompt = `אתה מומחה לזיהוי עסקים בישראל וסיווגם לקטגוריות.
 
 הקטגוריות הזמינות הן: ${categoryList}
 
@@ -299,20 +300,25 @@ ${descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
   ...
 }
 
-חשוב: השתמש בתיאור המדויק כ-key, לא במספר.`;
+חשוב: השתמש בתיאור המדויק כ-key, לא במספר.
+אם אינך בטוח, בחר את הקטגוריה הקרובה ביותר מהרשימה.`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'claude-3-haiku-20240307',
-        max_tokens: 2000,
+        model,
+        temperature: 0.1,
+        response_format: { type: 'json_object' },
         messages: [
+          {
+            role: 'system',
+            content: 'ענה רק בפורמט JSON תקין.',
+          },
           {
             role: 'user',
             content: prompt,
@@ -322,15 +328,17 @@ ${descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
     });
 
     if (!response.ok) {
-      console.error('Claude API error:', await response.text());
+      console.error('OpenAI API error:', await response.text());
       return {};
     }
 
     const data = await response.json();
-    const content = data.content[0]?.text || '';
-    return parseClaudeCategorization(content);
+    const content = data?.choices?.[0]?.message?.content || '';
+    if (typeof content !== 'string') return {};
+
+    return parseAiCategorization(content);
   } catch (error) {
-    console.error('Claude API call failed:', error);
+    console.error('OpenAI API call failed:', error);
     return {};
   }
 }

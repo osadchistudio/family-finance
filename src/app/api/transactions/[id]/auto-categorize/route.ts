@@ -5,7 +5,7 @@ import {
   findCategoryByName,
   identifyDescriptions,
   resolveCategoryForDescription,
-  resolveAnthropicApiKey,
+  resolveOpenAiApiKey,
 } from '@/lib/autoCategorize';
 
 /**
@@ -41,11 +41,11 @@ export async function POST(
       },
     });
 
-    const anthropicKey = await resolveAnthropicApiKey();
+    const openaiKey = await resolveOpenAiApiKey();
     const categorizations = await identifyDescriptions(
       [transaction.description],
       categories,
-      anthropicKey,
+      openaiKey,
       { includeKeywordFallback: false }
     );
 

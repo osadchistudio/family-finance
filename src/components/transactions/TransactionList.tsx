@@ -178,7 +178,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
   }, []);
 
   useEffect(() => {
-    if (viewMode !== 'list') {
+    if (viewMode === 'grouped') {
       setSelectedTransactionIds(new Set());
       setBulkCategoryId('');
     }
@@ -772,8 +772,11 @@ export function TransactionList({ transactions: initialTransactions, categories:
           </button>
         )}
 
-        {selectedCount > 0 && (
-          <div className="w-full p-3 rounded-lg border border-blue-200 bg-blue-50 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+      </div>
+
+      {selectedCount > 0 && (
+        <div className="sticky top-20 lg:top-3 z-30 px-3 sm:px-4 pt-3 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
+          <div className="w-full p-3 rounded-lg border border-blue-200 bg-blue-50 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
             <div className="text-sm text-blue-800">
               נבחרו {selectedCount} תנועות
             </div>
@@ -807,9 +810,8 @@ export function TransactionList({ transactions: initialTransactions, categories:
               </button>
             </div>
           </div>
-        )}
-
-      </div>
+        </div>
+      )}
 
       {/* Month Navigation */}
       {availableMonths.length > 0 && (
@@ -1291,6 +1293,13 @@ export function TransactionList({ transactions: initialTransactions, categories:
                       return (
                         <div key={tx.id} className="px-4 py-2 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 hover:bg-gray-50">
                           <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={selectedTransactionIds.has(tx.id)}
+                              onChange={() => toggleTransactionSelection(tx.id)}
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              aria-label={`בחר תנועה ${tx.description}`}
+                            />
                             <span className="text-xs sm:text-sm text-gray-400">
                               {formatDate(tx.date)}
                             </span>

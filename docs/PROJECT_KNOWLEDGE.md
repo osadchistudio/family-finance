@@ -25,6 +25,23 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Multi-select enabled in by-category view + sticky bulk action bar
+Why:
+- User needed bulk category assignment while working in `לפי קטגוריה` view, not only in list view.
+- Bulk action bar needed to stay visible while scrolling for faster workflow.
+
+What changed:
+- Added row checkboxes in `לפי קטגוריה` transaction rows so multiple rows can be selected there too.
+- Bulk assignment action bar is now `sticky` at top while rows are selected.
+- Selection is preserved between `רשימה` and `לפי קטגוריה`, and cleared when switching to `מאוחד` (grouped) to avoid hidden selection confusion.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-13 - Multi-select transactions + bulk category assignment
 Why:
 - Needed a faster workflow to assign the same category to multiple selected transactions at once from the transactions page.

@@ -4,6 +4,7 @@ import {
   extractKeyword,
   findCategoryByName,
   identifyDescriptions,
+  resolveCategoryForDescription,
   resolveAnthropicApiKey,
 } from '@/lib/autoCategorize';
 
@@ -12,6 +13,14 @@ import {
  */
 export async function POST() {
   try {
+    const chunkArray = <T,>(items: T[], size: number): T[][] => {
+      const chunks: T[][] = [];
+      for (let index = 0; index < items.length; index += size) {
+        chunks.push(items.slice(index, index + size));
+      }
+      return chunks;
+    };
+
     // Get all uncategorized transactions
     const uncategorizedTransactions = await prisma.transaction.findMany({
       where: { categoryId: null },
@@ -20,7 +29,7 @@ export async function POST() {
         description: true,
         amount: true,
       },
-      take: 100, // Limit to avoid long processing
+      take: 500,
     });
 
     if (uncategorizedTransactions.length === 0) {
@@ -42,14 +51,20 @@ export async function POST() {
     const uniqueDescriptions = [...new Set(uncategorizedTransactions.map(t => t.description))];
 
     const anthropicKey = await resolveAnthropicApiKey();
-    const categorizations = await identifyDescriptions(uniqueDescriptions, categories, anthropicKey);
+    const descriptionChunks = chunkArray(uniqueDescriptions, 40);
+    const categorizations: Record<string, string> = {};
+
+    for (const chunk of descriptionChunks) {
+      const chunkResult = await identifyDescriptions(chunk, categories, anthropicKey);
+      Object.assign(categorizations, chunkResult);
+    }
 
     // Apply categorizations
     let categorizedCount = 0;
     const keywordsToAdd: { categoryId: string; keyword: string }[] = [];
 
     for (const tx of uncategorizedTransactions) {
-      const categoryName = categorizations[tx.description];
+      const categoryName = resolveCategoryForDescription(categorizations, tx.description);
       if (categoryName) {
         const category = findCategoryByName(categories, categoryName);
 
@@ -93,6 +108,7 @@ export async function POST() {
       message: `סווגו ${categorizedCount} עסקאות בהצלחה`,
       categorized: categorizedCount,
       total: uncategorizedTransactions.length,
+      processedDescriptions: uniqueDescriptions.length,
       newKeywords: keywordsToAdd.length,
     });
   } catch (error) {

@@ -4,6 +4,7 @@ import {
   extractKeyword,
   findCategoryByName,
   identifyDescriptions,
+  resolveCategoryForDescription,
   resolveAnthropicApiKey,
 } from '@/lib/autoCategorize';
 
@@ -48,7 +49,7 @@ export async function POST(
       { includeKeywordFallback: false }
     );
 
-    const categoryName = categorizations[transaction.description];
+    const categoryName = resolveCategoryForDescription(categorizations, transaction.description);
     if (!categoryName) {
       return NextResponse.json({
         success: true,

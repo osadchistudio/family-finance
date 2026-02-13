@@ -25,6 +25,32 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-12 - Auto-categorize reliability fix for large uncategorized sets
+Why:
+- Auto-categorize could return `0` even with many uncategorized transactions due fragile AI response matching and batch size limitations.
+- Real case observed: ~196 uncategorized rows with no successful categorization.
+
+What changed:
+- Global auto-categorize now processes transactions in larger scope (`take: 500`) and chunks description identification requests in batches of 40.
+- Added resilient mapping from AI response keys to transaction descriptions (exact/trim/normalized/fuzzy token overlap), instead of strict exact-string key match only.
+- Improved category matching from AI label to real category:
+  - normalized matching,
+  - contains matching,
+  - token-overlap fallback.
+- AI flow now falls back to local heuristics if Claude call returns empty/unparseable output.
+- Claude response parsing is now more robust (handles code fences, smart quotes, and normalized JSON extraction).
+- Heuristic business-pattern mapping now resolves aliases to existing categories dynamically, instead of hardcoded category labels only.
+- Same robust description-key resolution was applied to single-transaction auto-categorize endpoint.
+
+Files touched:
+- `/src/lib/autoCategorize.ts`
+- `/src/app/api/transactions/auto-categorize/route.ts`
+- `/src/app/api/transactions/[id]/auto-categorize/route.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-12 - Login "Remember me" + brute-force protection
 Why:
 - Needed persistent login only when user explicitly requests it.

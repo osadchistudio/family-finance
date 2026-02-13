@@ -6,6 +6,7 @@ import { formatCurrency, formatDate } from '@/lib/formatters';
 import { SummaryCard } from '@/components/dashboard/SummaryCard';
 import { Repeat, X } from 'lucide-react';
 import { showToast } from '@/components/ui/Toast';
+import { isLikelySameMerchant } from '@/lib/merchantSimilarity';
 
 interface Transaction {
   id: string;
@@ -34,25 +35,50 @@ interface RecurringExpensesListProps {
   incomeMonths: number;
 }
 
-interface RecurringItem {
+type AmountStrategy = 'max' | 'avg';
+
+interface RecurringCluster {
   key: string;
+  categoryKey: string;
   representativeId: string;
   description: string;
-  amount: number;
   categoryId: string | null;
   category: Transaction['category'];
   lastDate: string;
   occurrences: number;
+  amountSum: number;
+  amountMin: number;
+  amountMax: number;
+  transactionIds: string[];
 }
 
-function normalizeDescription(description: string): string {
-  return description.toLowerCase().trim().replace(/\s+/g, ' ');
+interface RecurringItem {
+  key: string;
+  categoryKey: string;
+  representativeId: string;
+  description: string;
+  categoryId: string | null;
+  category: Transaction['category'];
+  lastDate: string;
+  occurrences: number;
+  averageAmount: number;
+  minAmount: number;
+  maxAmount: number;
+  monthlyAmount: number;
+  transactionIds: string[];
 }
 
-function getRecurringItemKey(tx: Transaction): string {
-  const categoryKey = tx.categoryId || 'uncategorized';
-  const amountAbs = Math.abs(parseFloat(tx.amount)).toFixed(2);
-  return `${categoryKey}|${normalizeDescription(tx.description)}|${amountAbs}`;
+function parseAbsAmount(amountValue: string): number {
+  const parsed = parseFloat(amountValue);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.abs(parsed);
+}
+
+function getMonthlyAmount(cluster: RecurringCluster, strategy: AmountStrategy): number {
+  if (strategy === 'avg') {
+    return cluster.occurrences > 0 ? cluster.amountSum / cluster.occurrences : cluster.amountMax;
+  }
+  return cluster.amountMax;
 }
 
 export function RecurringExpensesList({
@@ -61,64 +87,98 @@ export function RecurringExpensesList({
   incomeMonths
 }: RecurringExpensesListProps) {
   const [transactions, setTransactions] = useState(initialTransactions);
+  const [amountStrategy, setAmountStrategy] = useState<AmountStrategy>('max');
 
-  const recurringItems = useMemo(() => {
-    const itemsByKey = new Map<string, RecurringItem>();
+  const recurringClusters = useMemo(() => {
+    const clusters: RecurringCluster[] = [];
+    const expenseTransactions = transactions
+      .filter((tx) => parseFloat(tx.amount) < 0)
+      .sort((a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf());
 
-    for (const tx of transactions) {
-      const amount = parseFloat(tx.amount);
-      if (!Number.isFinite(amount) || amount >= 0) continue;
+    for (const tx of expenseTransactions) {
+      const amount = parseAbsAmount(tx.amount);
+      const categoryKey = tx.categoryId || 'uncategorized';
 
-      const key = getRecurringItemKey(tx);
-      const existing = itemsByKey.get(key);
+      const cluster = clusters.find((existing) =>
+        existing.categoryKey === categoryKey
+        && isLikelySameMerchant(existing.description, tx.description)
+      );
 
-      if (!existing) {
-        itemsByKey.set(key, {
-          key,
+      if (!cluster) {
+        clusters.push({
+          key: `${categoryKey}|${tx.id}`,
+          categoryKey,
           representativeId: tx.id,
           description: tx.description,
-          amount: Math.abs(amount),
           categoryId: tx.categoryId,
           category: tx.category,
           lastDate: tx.date,
-          occurrences: 1
+          occurrences: 1,
+          amountSum: amount,
+          amountMin: amount,
+          amountMax: amount,
+          transactionIds: [tx.id],
         });
         continue;
       }
 
-      existing.occurrences += 1;
-      if (dayjs(tx.date).isAfter(existing.lastDate)) {
-        existing.lastDate = tx.date;
-        existing.representativeId = tx.id;
-        existing.description = tx.description;
-        existing.categoryId = tx.categoryId;
-        existing.category = tx.category;
+      cluster.occurrences += 1;
+      cluster.amountSum += amount;
+      cluster.amountMin = Math.min(cluster.amountMin, amount);
+      cluster.amountMax = Math.max(cluster.amountMax, amount);
+      cluster.transactionIds.push(tx.id);
+
+      if (dayjs(tx.date).isAfter(cluster.lastDate)) {
+        cluster.lastDate = tx.date;
+        cluster.representativeId = tx.id;
+        cluster.description = tx.description;
+        cluster.categoryId = tx.categoryId;
+        cluster.category = tx.category;
       }
     }
 
-    return Array.from(itemsByKey.values()).sort((a, b) => b.amount - a.amount);
+    return clusters;
   }, [transactions]);
+
+  const recurringItems = useMemo(() => {
+    return recurringClusters
+      .map<RecurringItem>((cluster) => ({
+        key: cluster.key,
+        categoryKey: cluster.categoryKey,
+        representativeId: cluster.representativeId,
+        description: cluster.description,
+        categoryId: cluster.categoryId,
+        category: cluster.category,
+        lastDate: cluster.lastDate,
+        occurrences: cluster.occurrences,
+        averageAmount: cluster.occurrences > 0 ? cluster.amountSum / cluster.occurrences : cluster.amountMax,
+        minAmount: cluster.amountMin,
+        maxAmount: cluster.amountMax,
+        monthlyAmount: getMonthlyAmount(cluster, amountStrategy),
+        transactionIds: cluster.transactionIds,
+      }))
+      .sort((a, b) => b.monthlyAmount - a.monthlyAmount);
+  }, [recurringClusters, amountStrategy]);
 
   const groupedByCategory = useMemo(() => {
     const groups: Record<string, { category: Transaction['category']; items: RecurringItem[]; total: number }> = {};
 
     for (const item of recurringItems) {
-      const categoryKey = item.categoryId || 'uncategorized';
-      if (!groups[categoryKey]) {
-        groups[categoryKey] = {
+      if (!groups[item.categoryKey]) {
+        groups[item.categoryKey] = {
           category: item.category,
           items: [],
-          total: 0
+          total: 0,
         };
       }
-      groups[categoryKey].items.push(item);
-      groups[categoryKey].total += item.amount;
+      groups[item.categoryKey].items.push(item);
+      groups[item.categoryKey].total += item.monthlyAmount;
     }
 
     return Object.entries(groups).sort(([, a], [, b]) => b.total - a.total);
   }, [recurringItems]);
 
-  const monthlyFixedTotal = recurringItems.reduce((sum, item) => sum + item.amount, 0);
+  const monthlyFixedTotal = recurringItems.reduce((sum, item) => sum + item.monthlyAmount, 0);
   const fixedCategoriesCount = groupedByCategory.length;
   const remainingForVariable = averageMonthlyIncome - monthlyFixedTotal;
 
@@ -130,15 +190,24 @@ export function RecurringExpensesList({
         body: JSON.stringify({
           isRecurring: false,
           learnFromThis: false,
-          applyToIdentical: true
+          applyToMerchantFamily: true,
         }),
       });
       if (!response.ok) throw new Error('Failed');
 
       const result = await response.json();
-      const removedCount = (result.updatedIdentical || 0) + 1;
+      const idsToRemove = new Set<string>(item.transactionIds);
 
-      setTransactions(prev => prev.filter(tx => getRecurringItemKey(tx) !== item.key));
+      if (Array.isArray(result.updatedMerchantFamilyIds)) {
+        for (const txId of result.updatedMerchantFamilyIds as string[]) {
+          idsToRemove.add(txId);
+        }
+      }
+      idsToRemove.add(item.representativeId);
+
+      setTransactions((prev) => prev.filter((tx) => !idsToRemove.has(tx.id)));
+
+      const removedCount = Math.max(1, idsToRemove.size);
       showToast(`הוסר מהוצאות קבועות (${removedCount} תנועות)`, 'success');
     } catch {
       showToast('שגיאה בעדכון', 'error');
@@ -172,8 +241,24 @@ export function RecurringExpensesList({
         />
       </div>
 
-      <div className="text-sm text-gray-500">
-        חישוב &quot;נשאר למשתנות&quot; מבוסס על ממוצע הכנסות חודשי של {incomeMonths} חודשים.
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+        <div className="text-sm text-gray-500">
+          חישוב &quot;נשאר למשתנות&quot; מבוסס על ממוצע הכנסות חודשי של {incomeMonths} חודשים.
+        </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor="fixed-amount-strategy" className="text-sm text-gray-600 whitespace-nowrap">
+            חישוב התחייבות:
+          </label>
+          <select
+            id="fixed-amount-strategy"
+            value={amountStrategy}
+            onChange={(event) => setAmountStrategy(event.target.value as AmountStrategy)}
+            className="text-sm px-3 py-1.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="max">לפי הגבוה ביותר (מומלץ)</option>
+            <option value="avg">לפי ממוצע</option>
+          </select>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm">
@@ -233,11 +318,16 @@ export function RecurringExpensesList({
                             <p className="text-xs text-gray-500 mt-0.5">
                               חיוב אחרון: {formatDate(item.lastDate)} | הופיע {item.occurrences} פעמים בהיסטוריה
                             </p>
+                            {item.occurrences > 1 && item.minAmount !== item.maxAmount && (
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                ממוצע: {formatCurrency(item.averageAmount)} | טווח: {formatCurrency(item.minAmount)}-{formatCurrency(item.maxAmount)}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-3 flex-shrink-0 self-end sm:self-auto">
                           <span className="text-sm font-semibold text-red-600">
-                            {formatCurrency(item.amount)}
+                            {formatCurrency(item.monthlyAmount)}
                           </span>
                           <button
                             onClick={() => handleRemoveRecurringItem(item)}
@@ -260,7 +350,7 @@ export function RecurringExpensesList({
           <div className="p-4 border-t bg-gray-50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
             <span className="text-sm text-gray-600">{fixedCategoriesCount} קטגוריות קבועות</span>
             <span className="text-sm">
-              <span className="text-gray-500">סה״כ התחייבות חודשית: </span>
+              <span className="text-gray-500">סה״כ התחייבות חודשית ({amountStrategy === 'max' ? 'לפי הגבוה' : 'לפי ממוצע'}): </span>
               <span className="font-semibold text-red-600">{formatCurrency(monthlyFixedTotal)}</span>
             </span>
           </div>

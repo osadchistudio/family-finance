@@ -25,6 +25,30 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Fixed recurring-expenses duplication when amount varies
+Why:
+- Recurring obligations were split into multiple rows when the same merchant had small amount variations over time.
+- This inflated fixed-expense totals and made planning unreliable (same recurring obligation shown multiple times).
+
+What changed:
+- Recurring expenses are now clustered by merchant-family similarity (same category + similar merchant name), not by exact amount.
+- Added monthly amount strategy selector on recurring page:
+  - `לפי הגבוה ביותר (מומלץ)` (default, conservative planning),
+  - `לפי ממוצע`.
+- Category totals and overall fixed-expense total now use the selected strategy.
+- Each recurring row now shows range context when amounts vary:
+  - average amount,
+  - min-max range across historical occurrences.
+- Removing a recurring item from the recurring page now removes recurring flag for the whole merchant family (not only identical description+amount).
+
+Files touched:
+- `/src/components/recurring/RecurringExpensesList.tsx`
+- `/src/app/api/transactions/[id]/recurring/route.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-13 - Similar-transactions propagation upgraded to merchant-family matching
 Why:
 - Manual category assignment propagation was too strict (`description` exact equality only), so branch variants were missed.

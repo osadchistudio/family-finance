@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { extractKeyword } from '@/lib/keywords';
+import { isLikelySameMerchant } from '@/lib/merchantSimilarity';
 
 /**
  * Toggle recurring status on a transaction and optionally learn the keyword
@@ -12,7 +13,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isRecurring, learnFromThis, applyToIdentical = false } = body;
+    const { isRecurring, learnFromThis, applyToIdentical = false, applyToMerchantFamily = false } = body;
 
     const transaction = await prisma.transaction.findUnique({
       where: { id }
@@ -43,6 +44,44 @@ export async function PATCH(
         data: { isRecurring }
       });
       updatedIdentical = identical.count;
+    }
+
+    let updatedMerchantFamily = 0;
+    let updatedMerchantFamilyIds: string[] = [];
+
+    if (applyToMerchantFamily) {
+      const sourceAmount = parseFloat(transaction.amount.toString());
+      const sourceIsExpense = Number.isFinite(sourceAmount) ? sourceAmount < 0 : true;
+
+      const candidates = await prisma.transaction.findMany({
+        where: {
+          id: { not: id },
+          isExcluded: false,
+          categoryId: transaction.categoryId,
+          ...(sourceIsExpense
+            ? { amount: { lt: 0 } }
+            : { amount: { gt: 0 } }),
+        },
+        select: {
+          id: true,
+          description: true,
+        },
+      });
+
+      updatedMerchantFamilyIds = candidates
+        .filter((candidate) => isLikelySameMerchant(transaction.description, candidate.description))
+        .map((candidate) => candidate.id);
+
+      if (updatedMerchantFamilyIds.length > 0) {
+        await prisma.transaction.updateMany({
+          where: {
+            id: { in: updatedMerchantFamilyIds },
+          },
+          data: { isRecurring },
+        });
+      }
+
+      updatedMerchantFamily = updatedMerchantFamilyIds.length;
     }
 
     let updatedSimilar = 0;
@@ -97,6 +136,8 @@ export async function PATCH(
       isRecurring,
       updatedSimilar,
       updatedIdentical,
+      updatedMerchantFamily,
+      updatedMerchantFamilyIds,
       keywordAdded
     });
   } catch (error) {

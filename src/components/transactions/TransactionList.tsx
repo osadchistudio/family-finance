@@ -1105,27 +1105,27 @@ export function TransactionList({ transactions: initialTransactions, categories:
                       const txIsExpense = amount < 0;
 
                       return (
-                        <div key={tx.id} className="px-4 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 hover:bg-gray-50">
-                          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                        <div key={tx.id} className="px-4 py-2 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 hover:bg-gray-50">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
                             <span className="text-xs sm:text-sm text-gray-400">
                               {formatDate(tx.date)}
                             </span>
-                            <span className="text-sm text-gray-700 break-words">
+                            <span className="text-sm text-gray-700 break-words min-w-0">
                               {tx.description}
                             </span>
-                            {isUncategorized && (
-                              <CategorySelector
-                                transactionId={tx.id}
-                                transactionDescription={tx.description}
-                                currentCategory={null}
-                                categories={categories as Category[]}
-                                onCategoryChange={handleCategoryChange}
-                              />
-                            )}
                           </div>
-                          <span className={`text-sm font-medium self-end sm:self-auto ${txIsExpense ? 'text-red-600' : 'text-green-600'}`}>
-                            {txIsExpense ? '' : '+'}{formatCurrency(Math.abs(amount))}
-                          </span>
+                          <div className="flex items-center justify-between lg:justify-end gap-3 sm:gap-4">
+                            <CategorySelector
+                              transactionId={tx.id}
+                              transactionDescription={tx.description}
+                              currentCategory={tx.category}
+                              categories={categories as Category[]}
+                              onCategoryChange={handleCategoryChange}
+                            />
+                            <span className={`text-sm font-medium whitespace-nowrap ${txIsExpense ? 'text-red-600' : 'text-green-600'}`}>
+                              {txIsExpense ? '' : '+'}{formatCurrency(Math.abs(amount))}
+                            </span>
+                          </div>
                         </div>
                       );
                     })}

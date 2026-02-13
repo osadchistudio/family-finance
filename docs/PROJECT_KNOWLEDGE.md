@@ -25,6 +25,23 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Category selector enabled for every row in "by category" view
+Why:
+- In transactions screen, `לפי קטגוריה` view allowed category assignment only for uncategorized rows.
+- Needed direct per-transaction category editing for all rows in grouped/category view.
+
+What changed:
+- In `לפי קטגוריה` transaction rows, category selector is now shown for every transaction (not only uncategorized).
+- Selector uses current row category when available and still supports uncategorized rows.
+- Layout updated to keep date/description on one side and category selector + amount on the other side in responsive mode.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-13 - Monthly summary category trend filter (per-category monthly spend)
 Why:
 - Needed to analyze monthly spending trend for a specific category (for example: supermarket) and track improvement/increase over time.

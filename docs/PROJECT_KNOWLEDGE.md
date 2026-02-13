@@ -25,6 +25,35 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Similar-transactions propagation upgraded to merchant-family matching
+Why:
+- Manual category assignment propagation was too strict (`description` exact equality only), so branch variants were missed.
+- Real examples: assigning category to `סטימצקי זכרון` did not update `סטימצקי עין שמר`; same issue for short two-word brands like `רי בר`.
+
+What changed:
+- Added merchant similarity engine with normalization and signature matching:
+  - handles punctuation/spacing/niqqud normalization,
+  - skips generic banking words (transfer/charge/etc.),
+  - supports short two-word merchant signatures (e.g. `רי בר`),
+  - matches by merchant-family similarity (not exact text only).
+- Manual category update endpoint now propagates to **similar merchant transactions** (same amount sign), not only identical descriptions.
+- Single-transaction AI categorization propagation now uses the same merchant-family matching logic.
+- Both endpoints now return `updatedSimilarIds` so client state updates immediately by IDs.
+- Transactions UI local-state update switched from description-equality to `updatedSimilarIds` application for accurate immediate feedback.
+- Learning keyword extraction now uses merchant signature extraction, improving future auto-categorization learning for branch variants.
+- User-facing wording changed from "עסקאות זהות" to "עסקאות דומות" where relevant.
+
+Files touched:
+- `/src/lib/merchantSimilarity.ts`
+- `/src/lib/keywords.ts`
+- `/src/app/api/transactions/[id]/category/route.ts`
+- `/src/app/api/transactions/[id]/auto-categorize/route.ts`
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-13 - Switched AI categorization provider to OpenAI (gpt-5-mini)
 Why:
 - User requested migration from Anthropic to OpenAI and a default model of `gpt-5-mini`.

@@ -7,6 +7,7 @@ import {
   resolveCategoryForDescription,
   resolveOpenAiApiKey,
 } from '@/lib/autoCategorize';
+import { isLikelySameMerchant } from '@/lib/merchantSimilarity';
 
 /**
  * Auto-categorize a single transaction by id
@@ -79,24 +80,41 @@ export async function POST(
       currentUpdated = 1;
     }
 
-    // Propagate AI result to identical transactions (same description),
-    // matching the manual behavior for consistency.
-    const similarResult = await prisma.transaction.updateMany({
+    const sourceAmount = parseFloat(transaction.amount.toString());
+    const sourceIsExpense = Number.isFinite(sourceAmount) ? sourceAmount < 0 : true;
+
+    const candidates = await prisma.transaction.findMany({
       where: {
         id: { not: transaction.id },
-        description: {
-          equals: transaction.description,
-          mode: 'insensitive',
-        },
+        isExcluded: false,
         NOT: {
           categoryId: category.id,
         },
+        ...(sourceIsExpense
+          ? { amount: { lt: 0 } }
+          : { amount: { gt: 0 } }),
       },
-      data: {
-        categoryId: category.id,
-        isAutoCategorized: true,
-      },
+      select: {
+        id: true,
+        description: true,
+      }
     });
+
+    const updatedSimilarIds = candidates
+      .filter(candidate => isLikelySameMerchant(transaction.description, candidate.description))
+      .map(candidate => candidate.id);
+
+    if (updatedSimilarIds.length > 0) {
+      await prisma.transaction.updateMany({
+        where: {
+          id: { in: updatedSimilarIds },
+        },
+        data: {
+          categoryId: category.id,
+          isAutoCategorized: true,
+        },
+      });
+    }
 
     const keyword = extractKeyword(transaction.description);
     if (keyword) {
@@ -114,13 +132,14 @@ export async function POST(
       }
     }
 
-    const categorized = currentUpdated > 0 || similarResult.count > 0;
+    const categorized = currentUpdated > 0 || updatedSimilarIds.length > 0;
 
     return NextResponse.json({
       success: true,
       categorized,
       transactionId: transaction.id,
-      updatedSimilar: similarResult.count,
+      updatedSimilar: updatedSimilarIds.length,
+      updatedSimilarIds,
       category: {
         id: category.id,
         name: category.name,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { extractKeyword } from '@/lib/keywords';
+import { isLikelySameMerchant } from '@/lib/merchantSimilarity';
 
 /**
  * Update transaction category and optionally learn for future
@@ -36,27 +37,48 @@ export async function PATCH(
     });
 
     let updatedSimilar = 0;
+    let updatedSimilarIds: string[] = [];
     let keywordAdded = null;
 
     if (applyToSimilar) {
-      // Optionally propagate category change to identical transactions (same description)
-      const similarResult = await prisma.transaction.updateMany({
+      const sourceAmount = parseFloat(transaction.amount.toString());
+      const sourceIsExpense = Number.isFinite(sourceAmount) ? sourceAmount < 0 : true;
+
+      // Find similar merchant transactions (not only identical description).
+      const candidates = await prisma.transaction.findMany({
         where: {
           id: { not: id },
-          description: {
-            equals: transaction.description,
-            mode: 'insensitive',
-          },
+          isExcluded: false,
           NOT: {
             categoryId: categoryId ?? null,
           },
+          ...(sourceIsExpense
+            ? { amount: { lt: 0 } }
+            : { amount: { gt: 0 } }),
         },
-        data: {
-          categoryId,
-          isAutoCategorized: false,
-        },
+        select: {
+          id: true,
+          description: true,
+        }
       });
-      updatedSimilar = similarResult.count;
+
+      updatedSimilarIds = candidates
+        .filter(candidate => isLikelySameMerchant(transaction.description, candidate.description))
+        .map(candidate => candidate.id);
+
+      if (updatedSimilarIds.length > 0) {
+        await prisma.transaction.updateMany({
+          where: {
+            id: { in: updatedSimilarIds }
+          },
+          data: {
+            categoryId,
+            isAutoCategorized: false,
+          },
+        });
+      }
+
+      updatedSimilar = updatedSimilarIds.length;
     }
 
     // If user wants the system to learn from this (future transactions)
@@ -93,6 +115,7 @@ export async function PATCH(
       learned: learnFromThis,
       appliedToSimilar: applyToSimilar,
       updatedSimilar,
+      updatedSimilarIds,
       keywordAdded
     });
   } catch (error) {

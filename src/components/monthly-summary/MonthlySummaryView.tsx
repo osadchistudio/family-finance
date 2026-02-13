@@ -5,23 +5,34 @@ import { MonthCard, MonthSummaryData } from './MonthCard';
 import { MonthDetail } from './MonthDetail';
 import { SummaryCard } from '@/components/dashboard/SummaryCard';
 import { ExpenseChart } from '@/components/dashboard/ExpenseChart';
+import { CategoryExpenseTrendChart } from './CategoryExpenseTrendChart';
 import { getHebrewMonthName } from '@/lib/formatters';
 import dayjs from 'dayjs';
 
 interface CategoryBreakdownItem {
+  id: string;
   name: string;
   value: number;
   color: string;
   icon: string;
 }
 
+interface CategoryOption {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+}
+
 interface MonthlySummaryViewProps {
   months: MonthSummaryData[];
   categoryBreakdowns: Record<string, CategoryBreakdownItem[]>;
+  categoryOptions: CategoryOption[];
 }
 
-export function MonthlySummaryView({ months, categoryBreakdowns }: MonthlySummaryViewProps) {
+export function MonthlySummaryView({ months, categoryBreakdowns, categoryOptions }: MonthlySummaryViewProps) {
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState('');
 
   const currentMonthKey = dayjs().format('YYYY-MM');
 
@@ -78,6 +89,13 @@ export function MonthlySummaryView({ months, categoryBreakdowns }: MonthlySummar
 
       {/* Expense trend chart */}
       <ExpenseChart data={chartData} />
+      <CategoryExpenseTrendChart
+        months={months}
+        categoryBreakdowns={categoryBreakdowns}
+        selectedCategoryId={selectedCategoryId}
+        categoryOptions={categoryOptions}
+        onCategoryChange={setSelectedCategoryId}
+      />
 
       {/* Month cards grid */}
       <div>

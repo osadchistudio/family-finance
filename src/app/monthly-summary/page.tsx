@@ -96,25 +96,41 @@ async function getMonthlySummaryData() {
       };
     });
 
-  // Category breakdowns per month (for drill-down)
-  const categoryBreakdowns: Record<string, { name: string; value: number; color: string; icon: string }[]> = {};
+  // Category breakdowns per month (for drill-down and category trend filtering)
+  const categoryBreakdowns: Record<string, { id: string; name: string; value: number; color: string; icon: string }[]> = {};
+  const categoryOptionsMap: Record<string, { id: string; name: string; icon: string; color: string }> = {};
 
   for (const [monthKey, agg] of Object.entries(monthMap)) {
-    categoryBreakdowns[monthKey] = Object.values(agg.categories)
-      .map(c => ({
+    categoryBreakdowns[monthKey] = Object.entries(agg.categories)
+      .map(([categoryId, c]) => ({
+        id: categoryId,
         name: c.name,
         value: c.total.toNumber(),
         color: c.color,
         icon: c.icon,
       }))
       .sort((a, b) => b.value - a.value);
+
+    for (const [categoryId, category] of Object.entries(agg.categories)) {
+      if (!categoryOptionsMap[categoryId]) {
+        categoryOptionsMap[categoryId] = {
+          id: categoryId,
+          name: category.name,
+          icon: category.icon,
+          color: category.color,
+        };
+      }
+    }
   }
 
-  return { months, categoryBreakdowns };
+  const categoryOptions = Object.values(categoryOptionsMap)
+    .sort((a, b) => a.name.localeCompare(b.name, 'he'));
+
+  return { months, categoryBreakdowns, categoryOptions };
 }
 
 export default async function MonthlySummaryPage() {
-  const { months, categoryBreakdowns } = await getMonthlySummaryData();
+  const { months, categoryBreakdowns, categoryOptions } = await getMonthlySummaryData();
 
   return (
     <div className="space-y-6">
@@ -126,6 +142,7 @@ export default async function MonthlySummaryPage() {
       <MonthlySummaryView
         months={months}
         categoryBreakdowns={categoryBreakdowns}
+        categoryOptions={categoryOptions}
       />
     </div>
   );

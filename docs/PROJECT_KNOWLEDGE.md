@@ -25,6 +25,30 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Monthly summary category trend filter (per-category monthly spend)
+Why:
+- Needed to analyze monthly spending trend for a specific category (for example: supermarket) and track improvement/increase over time.
+- Existing monthly summary showed only global income/expense trend and did not allow category-focused trend analysis.
+
+What changed:
+- Added category metadata (`id`) to monthly category breakdown payload.
+- Added category options list to monthly summary data model, aggregated across last 12 months.
+- Added a new chart section on monthly summary page:
+  - `מגמת הוצאות לפי קטגוריה`
+  - Category selector (`כל ההוצאות` + specific categories)
+  - Monthly trend line/area for selected category only.
+- Existing global income/expense trend chart remains unchanged.
+
+Files touched:
+- `/src/app/monthly-summary/page.tsx`
+- `/src/components/monthly-summary/MonthlySummaryView.tsx`
+- `/src/components/monthly-summary/MonthDetail.tsx`
+- `/src/components/monthly-summary/CategoryExpenseTrendChart.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-13 - Category change now refreshes recurring-expenses view immediately
 Why:
 - Category changes from the transactions screen were not always reflected immediately in the recurring-expenses page.

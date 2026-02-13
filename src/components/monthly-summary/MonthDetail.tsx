@@ -19,7 +19,7 @@ interface TransactionItem {
 
 interface MonthDetailProps {
   data: MonthSummaryData;
-  categoryBreakdown: { name: string; value: number; color: string; icon: string }[];
+  categoryBreakdown: { id: string; name: string; value: number; color: string; icon: string }[];
   onBack: () => void;
 }
 
@@ -118,12 +118,12 @@ export function MonthDetail({ data, categoryBreakdown, onBack }: MonthDetailProp
             קטגוריות מובילות
           </h3>
           <div className="space-y-3">
-            {categoryBreakdown.slice(0, 8).map((cat, i) => {
+            {categoryBreakdown.slice(0, 8).map((cat) => {
               const pct = data.expense > 0
                 ? ((cat.value / data.expense) * 100).toFixed(1)
                 : '0';
               return (
-                <div key={i} className="flex items-center justify-between">
+                <div key={cat.id} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div
                       className="w-3 h-3 rounded-full"

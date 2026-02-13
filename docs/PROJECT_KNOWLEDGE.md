@@ -25,6 +25,23 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Category selector dropdown viewport-clamp fix
+Why:
+- Category selector dropdown could overflow outside the screen edges in transactions UI (especially on mobile / narrow viewport).
+- This caused visual breakage and made search/options partially hidden.
+
+What changed:
+- Updated category selector dropdown positioning logic to clamp to viewport bounds.
+- Position now uses computed `left` + `top` with safe margins instead of fixed-width right anchoring only.
+- Dropdown width is now constrained to available viewport width (`min(288px, viewport - margins)`), preventing off-screen rendering.
+
+Files touched:
+- `/src/components/transactions/CategorySelector.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-13 - Category selector enabled for every row in "by category" view
 Why:
 - In transactions screen, `לפי קטגוריה` view allowed category assignment only for uncategorized rows.

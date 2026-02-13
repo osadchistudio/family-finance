@@ -50,17 +50,32 @@ export function CategorySelector({
 
       const rect = buttonRef.current.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
       const dropdownHeight = 350; // approximate max height
+      const viewportMargin = 8;
+      const dropdownWidth = Math.min(288, viewportWidth - viewportMargin * 2);
+      const preferredLeft = rect.right - dropdownWidth; // align to button right edge (RTL-friendly)
+      const maxLeft = Math.max(viewportMargin, viewportWidth - dropdownWidth - viewportMargin);
+      const left = Math.min(
+        Math.max(preferredLeft, viewportMargin),
+        maxLeft
+      );
 
       // Check if dropdown would go below viewport
       const spaceBelow = viewportHeight - rect.bottom;
       const shouldOpenUpward = spaceBelow < dropdownHeight && rect.top > dropdownHeight;
+      const preferredTop = shouldOpenUpward ? rect.top - dropdownHeight : rect.bottom + 4;
+      const maxTop = Math.max(viewportMargin, viewportHeight - dropdownHeight - viewportMargin);
+      const top = Math.min(
+        Math.max(preferredTop, viewportMargin),
+        maxTop
+      );
 
       setDropdownStyle({
         position: 'fixed',
-        top: shouldOpenUpward ? rect.top - dropdownHeight : rect.bottom + 4,
-        right: window.innerWidth - rect.right,
-        width: 288, // w-72 = 18rem = 288px
+        top,
+        left,
+        width: dropdownWidth,
         zIndex: 50,
       });
 

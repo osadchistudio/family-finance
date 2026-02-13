@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { extractKeyword } from '@/lib/keywords';
 import { isLikelySameMerchant } from '@/lib/merchantSimilarity';
@@ -108,6 +109,10 @@ export async function PATCH(
       }
 
     }
+
+    revalidatePath('/transactions');
+    revalidatePath('/recurring');
+    revalidatePath('/');
 
     return NextResponse.json({
       success: true,

@@ -25,6 +25,28 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Category change now refreshes recurring-expenses view immediately
+Why:
+- Category changes from the transactions screen were not always reflected immediately in the recurring-expenses page.
+- Main cause was route caching/static behavior without explicit invalidation after mutation.
+
+What changed:
+- Recurring page was switched to dynamic rendering (`force-dynamic`) to always read fresh DB state.
+- Added explicit cache invalidation after single-transaction category updates and single-transaction AI categorization:
+  - `/transactions`
+  - `/recurring`
+  - `/`
+- This ensures recurring category grouping updates immediately after category change actions.
+
+Files touched:
+- `/src/app/recurring/page.tsx`
+- `/src/app/api/transactions/[id]/category/route.ts`
+- `/src/app/api/transactions/[id]/auto-categorize/route.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-13 - Fixed recurring-expenses duplication when amount varies
 Why:
 - Recurring obligations were split into multiple rows when the same merchant had small amount variations over time.

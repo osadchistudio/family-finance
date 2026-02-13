@@ -3,6 +3,8 @@ import { RecurringExpensesList } from '@/components/recurring/RecurringExpensesL
 import { Decimal } from 'decimal.js';
 import dayjs from 'dayjs';
 
+export const dynamic = 'force-dynamic';
+
 async function getRecurringTransactions() {
   const transactions = await prisma.transaction.findMany({
     where: { isRecurring: true, isExcluded: false },

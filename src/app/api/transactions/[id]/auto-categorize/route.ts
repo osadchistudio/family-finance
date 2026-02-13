@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import {
   extractKeyword,
@@ -133,6 +134,10 @@ export async function POST(
     }
 
     const categorized = currentUpdated > 0 || updatedSimilarIds.length > 0;
+
+    revalidatePath('/transactions');
+    revalidatePath('/recurring');
+    revalidatePath('/');
 
     return NextResponse.json({
       success: true,

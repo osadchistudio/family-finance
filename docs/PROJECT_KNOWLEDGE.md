@@ -47,7 +47,8 @@ Files touched:
 Deploy/runtime impact:
 - Requires normal deploy only.
 - No DB migration needed.
-- Existing imported rows are not auto-fixed retroactively (affects new imports from this point forward).
+- Existing imported rows are not globally auto-fixed in one sweep.
+- Re-uploading the same source file now performs a safe in-place correction for rows with the same `מס' שובר` (reference) and opposite sign, and reports `correctedExisting` in upload response.
 
 ### 2026-02-13 - Safe-guarded similar-transactions propagation for category assignment
 Why:

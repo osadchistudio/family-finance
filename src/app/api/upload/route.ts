@@ -5,6 +5,8 @@ import { keywordCategorizer } from '@/services/categorization/KeywordCategorizer
 import { recurringKeywordMatcher } from '@/services/categorization/RecurringKeywordMatcher';
 import { Institution } from '@prisma/client';
 
+const AMOUNT_EPSILON = 0.01;
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -89,30 +91,77 @@ export async function POST(request: NextRequest) {
     // Get existing transactions for duplicate check (batch query)
     const existingTransactions = await prisma.transaction.findMany({
       where: { accountId: account.id },
-      select: { date: true, amount: true, description: true, reference: true }
+      select: { id: true, date: true, amount: true, description: true, reference: true }
     });
 
-    // Create Sets for fast duplicate lookup using multiple strategies
+    // Create Sets/Maps for fast duplicate lookup and correction by reference
     const existingKeysByContent = new Set(
       existingTransactions.map(tx =>
         `${tx.date.toISOString()}_${tx.amount}_${tx.description}`
       )
     );
-    const existingKeysByRef = new Set(
+    const existingByRef = new Map(
       existingTransactions
         .filter(tx => tx.reference)
-        .map(tx => tx.reference!)
+        .map(tx => [tx.reference!, tx])
     );
+    const seenRefsInFile = new Set<string>();
 
     // Filter out duplicates and prepare batch data
     const transactionsToCreate = [];
+    const existingTransactionsToFix: Array<{
+      id: string;
+      data: {
+        amount: number;
+        date: Date;
+        valueDate: Date | null;
+        description: string;
+        categoryId: null;
+        isAutoCategorized: false;
+        isRecurring: false;
+      };
+    }> = [];
     let duplicates = 0;
+    let correctedExisting = 0;
+    const fixedTransactionIds = new Set<string>();
 
     for (const tx of parseResult.transactions) {
       // Check duplicate by reference (voucher number) first - most reliable
-      if (tx.reference && existingKeysByRef.has(tx.reference)) {
-        duplicates++;
-        continue;
+      if (tx.reference) {
+        if (seenRefsInFile.has(tx.reference)) {
+          duplicates++;
+          continue;
+        }
+
+        const existing = existingByRef.get(tx.reference);
+        if (existing) {
+          const existingAmount = parseFloat(existing.amount.toString());
+          const incomingAmount = tx.amount;
+          const sameAbsoluteAmount = Math.abs(Math.abs(existingAmount) - Math.abs(incomingAmount)) < AMOUNT_EPSILON;
+          const signChanged = Math.sign(existingAmount) !== Math.sign(incomingAmount);
+
+          // If same voucher exists with same absolute amount but opposite sign,
+          // treat it as a historical sign bug and fix the existing row in-place.
+          if (sameAbsoluteAmount && signChanged && !fixedTransactionIds.has(existing.id)) {
+            existingTransactionsToFix.push({
+              id: existing.id,
+              data: {
+                amount: incomingAmount,
+                date: tx.date,
+                valueDate: tx.valueDate || null,
+                description: tx.description,
+                categoryId: null,
+                isAutoCategorized: false,
+                isRecurring: false,
+              },
+            });
+            fixedTransactionIds.add(existing.id);
+            correctedExisting++;
+          }
+
+          duplicates++;
+          continue;
+        }
       }
 
       // Fallback: check by content
@@ -124,7 +173,7 @@ export async function POST(request: NextRequest) {
 
       // Mark as seen to avoid duplicates within same file
       existingKeysByContent.add(key);
-      if (tx.reference) existingKeysByRef.add(tx.reference);
+      if (tx.reference) seenRefsInFile.add(tx.reference);
 
       // Categorize (sync operation - no DB call)
       const categorization = await keywordCategorizer.categorize(tx.description);
@@ -153,6 +202,16 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Apply in-place fixes for existing records with wrong sign
+    if (existingTransactionsToFix.length > 0) {
+      for (const fix of existingTransactionsToFix) {
+        await prisma.transaction.update({
+          where: { id: fix.id },
+          data: fix.data,
+        });
+      }
+    }
+
     const imported = transactionsToCreate.length;
 
     return NextResponse.json({
@@ -164,6 +223,7 @@ export async function POST(request: NextRequest) {
       total: parseResult.transactions.length,
       imported,
       duplicates,
+      correctedExisting,
       skippedRows: parseResult.skippedRows,
       errors: parseResult.errors.length,
       fileUploadId: fileUpload.id

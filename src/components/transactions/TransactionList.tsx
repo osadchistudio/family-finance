@@ -1292,20 +1292,49 @@ export function TransactionList({ transactions: initialTransactions, categories:
 
                       return (
                         <div key={tx.id} className="px-4 py-2 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 hover:bg-gray-50">
-                          <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
+                          <div className="flex items-start gap-2 sm:gap-3 min-w-0 flex-1">
                             <input
                               type="checkbox"
                               checked={selectedTransactionIds.has(tx.id)}
                               onChange={() => toggleTransactionSelection(tx.id)}
-                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                               aria-label={`בחר תנועה ${tx.description}`}
                             />
-                            <span className="text-xs sm:text-sm text-gray-400">
-                              {formatDate(tx.date)}
-                            </span>
-                            <span className="text-sm text-gray-700 break-words min-w-0">
-                              {tx.description}
-                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                <span className="text-xs sm:text-sm text-gray-400">
+                                  {formatDate(tx.date)}
+                                </span>
+                                <span className="text-sm text-gray-700 break-words min-w-0">
+                                  {tx.description}
+                                </span>
+                              </div>
+                              <div className="mt-1">
+                                {editingNoteId === tx.id ? (
+                                  <input
+                                    type="text"
+                                    value={noteValue}
+                                    onChange={(e) => setNoteValue(e.target.value)}
+                                    onBlur={() => handleNoteSave(tx.id)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleNoteSave(tx.id);
+                                      if (e.key === 'Escape') setEditingNoteId(null);
+                                    }}
+                                    className="text-xs text-gray-500 border-b border-gray-300 focus:border-blue-500 outline-none w-full max-w-xs bg-transparent py-0.5"
+                                    autoFocus
+                                    placeholder="הוסף הערה..."
+                                  />
+                                ) : (
+                                  <button
+                                    onClick={() => startEditingNote(tx.id, tx.notes)}
+                                    className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                                  >
+                                    <MessageSquare className="h-3 w-3" />
+                                    {tx.notes || 'הוסף הערה'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           </div>
                           <div className="flex items-center justify-between lg:justify-end gap-3 sm:gap-4">
                             <CategorySelector

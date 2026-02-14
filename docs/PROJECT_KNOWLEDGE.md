@@ -25,6 +25,24 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Notes editing added to by-category transactions view
+Why:
+- Users needed to add/edit notes while working in `לפי קטגוריה` view, not only in list view.
+
+What changed:
+- Added inline note UI for each transaction row in `לפי קטגוריה` view:
+  - shows existing note text when present,
+  - shows `הוסף הערה` action when empty,
+  - supports inline edit with save on blur/Enter and cancel on Escape.
+- Reused existing notes handlers to keep behavior identical to list view.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-13 - Multi-select enabled in by-category view + sticky bulk action bar
 Why:
 - User needed bulk category assignment while working in `לפי קטגוריה` view, not only in list view.

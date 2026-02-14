@@ -26,7 +26,8 @@ export function CategoryAveragesList({ data }: CategoryAveragesListProps) {
   }
 
   const topCategories = data.slice(0, 10);
-  const totalAverage = topCategories.reduce((sum, cat) => sum + cat.value, 0);
+  // Keep percentage basis aligned with the pie summary above (all categories, not just top visible items).
+  const totalAverage = data.reduce((sum, cat) => sum + cat.value, 0);
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-6">

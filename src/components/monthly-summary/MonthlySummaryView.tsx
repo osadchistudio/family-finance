@@ -32,7 +32,7 @@ interface MonthlySummaryViewProps {
 
 export function MonthlySummaryView({ months, categoryBreakdowns, categoryOptions }: MonthlySummaryViewProps) {
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
-  const [selectedCategoryId, setSelectedCategoryId] = useState('');
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
 
   const currentMonthKey = dayjs().format('YYYY-MM');
 
@@ -92,9 +92,9 @@ export function MonthlySummaryView({ months, categoryBreakdowns, categoryOptions
       <CategoryExpenseTrendChart
         months={months}
         categoryBreakdowns={categoryBreakdowns}
-        selectedCategoryId={selectedCategoryId}
+        selectedCategoryIds={selectedCategoryIds}
         categoryOptions={categoryOptions}
-        onCategoryChange={setSelectedCategoryId}
+        onCategoryChange={setSelectedCategoryIds}
       />
 
       {/* Month cards grid */}

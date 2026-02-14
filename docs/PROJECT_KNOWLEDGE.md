@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-02-12
+Last updated: 2026-02-14
 
 ## Stack
 - Next.js 16.1.6 (App Router, standalone output)
@@ -24,6 +24,43 @@ Last updated: 2026-02-12
 - `/prisma.config.ts` (required so Prisma 7 resolves schema path)
 
 ## Behavior updates
+
+### 2026-02-14 - Dashboard category percentages aligned between top pie summary and lower averages list
+Why:
+- Dashboard showed different percentages for the same category between the upper pie summary card and lower category averages list.
+- This caused confusion in monthly interpretation.
+
+What changed:
+- Unified percentage denominator in the lower category averages list to use all category averages (same basis used by top pie summary percentages).
+- Kept visible rows as top categories, but percentage math now reflects total category spending consistently across both sections.
+
+Files touched:
+- `/src/components/dashboard/CategoryAveragesList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
+### 2026-02-14 - Monthly summary category trend supports multi-select (up to 5) + per-category averages
+Why:
+- Needed to compare several categories in parallel on monthly trend chart (not only one category).
+- Needed visible monthly average expense per selected category for quick budgeting insights.
+
+What changed:
+- Category trend chart now supports multi-select up to 5 categories in parallel.
+- Switched category trend visualization from single-series area chart to multi-series line chart.
+- Added category selection panel with checkbox-based selection and a hard limit message when trying to exceed 5 selections.
+- Added quick reset action (`הצג סה״כ הוצאות`) to return to total-expense trend mode.
+- Added summary section below chart:
+  - monthly average expense per selected category, sorted by highest average.
+
+Files touched:
+- `/src/components/monthly-summary/CategoryExpenseTrendChart.tsx`
+- `/src/components/monthly-summary/MonthlySummaryView.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
 
 ### 2026-02-13 - Amount-sign parsing hardening (credit/debit correctness)
 Why:

@@ -364,20 +364,31 @@ export class FileParserService {
 
     // Extract amount
     let amount: number;
-    if (columns.amount) {
-      const amountStr = this.getValue(row, columns.amount);
-      amount = parseAmount(amountStr);
-      // Credit card transactions should be negative (expenses)
-      // But refunds (negative in file) should stay positive
-      if (amount > 0 && isCreditCard) {
-        amount = -amount;
-      }
-    } else if (columns.debit && columns.credit) {
-      const debit = parseAmount(this.getValue(row, columns.debit) || '0');
-      const credit = parseAmount(this.getValue(row, columns.credit) || '0');
+    // If both debit/credit columns exist, prefer them over a generic amount column.
+    // This avoids sign ambiguity in files that expose חובה/זכות semantics explicitly.
+    if (columns.debit && columns.credit) {
+      const debit = Math.abs(parseAmount(this.getValue(row, columns.debit) || '0'));
+      const credit = Math.abs(parseAmount(this.getValue(row, columns.credit) || '0'));
       amount = credit - debit;
+
+      // Fallback for rows where debit/credit cells are empty but a generic amount exists.
+      if (amount === 0 && columns.amount) {
+        amount = parseAmount(this.getValue(row, columns.amount) || '0');
+      }
+    } else if (columns.amount) {
+      amount = parseAmount(this.getValue(row, columns.amount));
     } else {
       return null;
+    }
+
+    // Credit card transactions should be negative expenses.
+    // Refund/credit rows should be positive income in system.
+    if (isCreditCard) {
+      if (amount > 0) {
+        amount = -amount;
+      } else if (amount < 0) {
+        amount = Math.abs(amount);
+      }
     }
 
     if (amount === 0) return null;

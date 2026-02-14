@@ -44,11 +44,15 @@ export function getHebrewMonthYear(date: Date | string): string {
 export function parseAmount(value: string | number): number {
   if (typeof value === 'number') return value;
   // Handle Hebrew number formats: 1,234.56 or -1,234.56 or (1,234.56)
-  let cleaned = value.toString().trim();
+  let cleaned = value.toString()
+    .replace(/[\u200E\u200F\u202A-\u202E]/g, '') // remove bidi control marks
+    .trim();
 
   // Handle parentheses as negative
-  const isNegative = cleaned.startsWith('(') && cleaned.endsWith(')') || cleaned.startsWith('-');
-  cleaned = cleaned.replace(/[()₪\s]/g, '');
+  const hasLeadingMinus = cleaned.startsWith('-') || cleaned.startsWith('−');
+  const hasTrailingMinus = cleaned.endsWith('-') || cleaned.endsWith('−');
+  const isNegative = (cleaned.startsWith('(') && cleaned.endsWith(')')) || hasLeadingMinus || hasTrailingMinus;
+  cleaned = cleaned.replace(/[()₪\s\-−]/g, '');
 
   // Remove thousand separators and handle decimal
   cleaned = cleaned.replace(/,/g, '');

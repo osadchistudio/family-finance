@@ -25,6 +25,30 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Amount-sign parsing hardening (credit/debit correctness)
+Why:
+- Some transactions that are credit/income in source files could be imported as expenses due sign ambiguity.
+- Needed stronger parsing rules for files with `חובה/זכות` columns and mixed minus formats.
+
+What changed:
+- `parseAmount` now supports additional minus formats:
+  - Unicode minus (`−`),
+  - trailing minus,
+  - hidden bidi control marks removal before parsing.
+- Transaction parser now prioritizes `חובה/זכות` columns when both exist (instead of generic amount), using absolute values by column semantics:
+  - `amount = credit - debit`.
+- Added fallback to generic amount only when debit/credit cells are empty on that row.
+- Credit-card parsing now maps refunds/credits correctly to positive income in system.
+
+Files touched:
+- `/src/lib/formatters.ts`
+- `/src/services/parsers/FileParserService.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Existing imported rows are not auto-fixed retroactively (affects new imports from this point forward).
+
 ### 2026-02-13 - Safe-guarded similar-transactions propagation for category assignment
 Why:
 - Category assignment could occasionally over-propagate to many unrelated transactions (for example 30+ rows), causing incorrect mass recategorization.

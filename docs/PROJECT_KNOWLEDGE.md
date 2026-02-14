@@ -25,6 +25,24 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Global "Back to top" floating button
+Why:
+- User needed a fast way to return to top on long pages.
+
+What changed:
+- Added a global floating `חזרה למעלה` button:
+  - appears after scrolling down (`>300px`),
+  - smooth-scrolls to page top on click.
+- Button is available on app pages and hidden on login page.
+
+Files touched:
+- `/src/components/ui/ScrollToTopButton.tsx`
+- `/src/components/LayoutShell.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-13 - Notes editing added to by-category transactions view
 Why:
 - Users needed to add/edit notes while working in `לפי קטגוריה` view, not only in list view.

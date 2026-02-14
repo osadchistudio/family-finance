@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/Sidebar';
+import { ScrollToTopButton } from '@/components/ui/ScrollToTopButton';
 
 interface LayoutShellProps {
   children: React.ReactNode;
@@ -19,6 +20,7 @@ export function LayoutShell({ children }: LayoutShellProps) {
           {children}
         </div>
       </main>
+      {!isLoginPage && <ScrollToTopButton />}
     </div>
   );
 }

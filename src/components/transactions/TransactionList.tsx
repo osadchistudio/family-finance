@@ -491,6 +491,14 @@ export function TransactionList({ transactions: initialTransactions, categories:
         } else {
           showToast('הקטגוריה עודכנה לתנועה הזו בלבד', 'success');
         }
+      } else if (result.propagationSkippedDueToSafety) {
+        const matched = Number(result.matchedSimilarCount || 0);
+        showToast(
+          `עודכנה רק התנועה שבחרת. נחסמה הפצה אוטומטית כי נמצאו ${matched} תנועות דומות (יותר מדי).`,
+          'info'
+        );
+      } else if (result.propagationSkipped) {
+        showToast('עודכנה רק התנועה שבחרת. לא בוצעה הפצה לדומות כי הזיהוי לא מספיק מדויק.', 'info');
       } else if (learnFromThis && result.keywordAdded) {
         if (result.updatedSimilar > 0) {
           showToast(`למדתי! עודכנו ${result.updatedSimilar} עסקאות דומות`, 'learning');
@@ -629,7 +637,10 @@ export function TransactionList({ transactions: initialTransactions, categories:
           return item;
         }));
 
-        if (updatedSimilar > 0) {
+        if (result.propagationSkippedDueToSafety) {
+          const matched = Number(result.matchedSimilarCount || 0);
+          showToast(`סווג אוטומטית ל"${category.name}". הפצה לדומות נחסמה (${matched} תנועות)`, 'info');
+        } else if (updatedSimilar > 0) {
           showToast(`סווג אוטומטית ל"${category.name}" ועודכנו גם ${updatedSimilar} תנועות דומות`, 'learning');
         } else {
           showToast(`סווג אוטומטית ל"${category.name}"`, 'learning');

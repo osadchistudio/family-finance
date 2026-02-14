@@ -25,6 +25,28 @@ Last updated: 2026-02-12
 
 ## Behavior updates
 
+### 2026-02-13 - Safe-guarded similar-transactions propagation for category assignment
+Why:
+- Category assignment could occasionally over-propagate to many unrelated transactions (for example 30+ rows), causing incorrect mass recategorization.
+
+What changed:
+- `עדכן תנועות דומות` is now disabled by default in category selector.
+- Selector resets the propagation checkbox back to its default after close/select, reducing accidental repeated mass updates.
+- Added server-side safety fuse for similar-propagation in both manual and AI single-transaction categorization:
+  - if potential similar matches exceed safe threshold (`15`), propagation is blocked and only the selected transaction is updated.
+  - response now includes safety metadata (`propagationSkippedDueToSafety`, `matchedSimilarCount`).
+- Transactions UI now shows explicit toast when propagation was blocked by safety threshold.
+
+Files touched:
+- `/src/components/transactions/CategorySelector.tsx`
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/app/api/transactions/[id]/category/route.ts`
+- `/src/app/api/transactions/[id]/auto-categorize/route.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-13 - Global "Back to top" floating button
 Why:
 - User needed a fast way to return to top on long pages.

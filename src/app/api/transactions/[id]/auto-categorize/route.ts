@@ -10,6 +10,8 @@ import {
 } from '@/lib/autoCategorize';
 import { extractMerchantSignature, isLikelySameMerchant } from '@/lib/merchantSimilarity';
 
+const MAX_SAFE_SIMILAR_UPDATES = 15;
+
 /**
  * Auto-categorize a single transaction by id
  */
@@ -84,6 +86,9 @@ export async function POST(
     const sourceSignature = extractMerchantSignature(transaction.description);
     let updatedSimilarIds: string[] = [];
 
+    let propagationSkippedDueToSafety = false;
+    let matchedSimilarCount = 0;
+
     if (sourceSignature) {
       const sourceAmount = parseFloat(transaction.amount.toString());
       const sourceIsExpense = Number.isFinite(sourceAmount) ? sourceAmount < 0 : true;
@@ -109,7 +114,12 @@ export async function POST(
         .filter(candidate => isLikelySameMerchant(transaction.description, candidate.description))
         .map(candidate => candidate.id);
 
-      if (updatedSimilarIds.length > 0) {
+      matchedSimilarCount = updatedSimilarIds.length;
+
+      if (updatedSimilarIds.length > MAX_SAFE_SIMILAR_UPDATES) {
+        propagationSkippedDueToSafety = true;
+        updatedSimilarIds = [];
+      } else if (updatedSimilarIds.length > 0) {
         await prisma.transaction.updateMany({
           where: {
             id: { in: updatedSimilarIds },
@@ -150,6 +160,8 @@ export async function POST(
       transactionId: transaction.id,
       updatedSimilar: updatedSimilarIds.length,
       updatedSimilarIds,
+      propagationSkippedDueToSafety,
+      matchedSimilarCount,
       category: {
         id: category.id,
         name: category.name,

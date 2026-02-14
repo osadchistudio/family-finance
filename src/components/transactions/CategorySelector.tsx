@@ -30,7 +30,7 @@ export function CategorySelector({
   transactionDescription,
   currentCategory,
   categories,
-  defaultApplyToSimilar = true,
+  defaultApplyToSimilar = false,
   onCategoryChange,
 }: CategorySelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -127,12 +127,14 @@ export function CategorySelector({
       setIsUpdating(false);
       setIsOpen(false);
       setSearchTerm('');
+      setApplyToSimilar(defaultApplyToSimilar);
     }
   };
 
   const handleClose = () => {
     setIsOpen(false);
     setSearchTerm('');
+    setApplyToSimilar(defaultApplyToSimilar);
   };
 
   const dropdownContent = isOpen ? (

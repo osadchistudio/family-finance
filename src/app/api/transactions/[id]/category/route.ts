@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { extractKeyword } from '@/lib/keywords';
 import { extractMerchantSignature, isLikelySameMerchant } from '@/lib/merchantSimilarity';
 
+const MAX_SAFE_SIMILAR_UPDATES = 15;
+
 /**
  * Update transaction category and optionally learn for future
  */
@@ -40,6 +42,9 @@ export async function PATCH(
     let updatedSimilar = 0;
     let updatedSimilarIds: string[] = [];
     let keywordAdded = null;
+    let propagationSkipped = false;
+    let propagationSkippedDueToSafety = false;
+    let matchedSimilarCount = 0;
 
     const sourceSignature = extractMerchantSignature(transaction.description);
     const canPropagateToSimilar = applyToSimilar && !!sourceSignature;
@@ -70,7 +75,13 @@ export async function PATCH(
         .filter(candidate => isLikelySameMerchant(transaction.description, candidate.description))
         .map(candidate => candidate.id);
 
-      if (updatedSimilarIds.length > 0) {
+      matchedSimilarCount = updatedSimilarIds.length;
+
+      if (updatedSimilarIds.length > MAX_SAFE_SIMILAR_UPDATES) {
+        propagationSkipped = true;
+        propagationSkippedDueToSafety = true;
+        updatedSimilarIds = [];
+      } else if (updatedSimilarIds.length > 0) {
         await prisma.transaction.updateMany({
           where: {
             id: { in: updatedSimilarIds }
@@ -83,6 +94,8 @@ export async function PATCH(
       }
 
       updatedSimilar = updatedSimilarIds.length;
+    } else if (applyToSimilar && !canPropagateToSimilar) {
+      propagationSkipped = true;
     }
 
     // If user wants the system to learn from this (future transactions)
@@ -122,7 +135,9 @@ export async function PATCH(
       transaction: updated,
       learned: learnFromThis,
       appliedToSimilar: applyToSimilar,
-      propagationSkipped: applyToSimilar && !canPropagateToSimilar,
+      propagationSkipped,
+      propagationSkippedDueToSafety,
+      matchedSimilarCount,
       updatedSimilar,
       updatedSimilarIds,
       keywordAdded

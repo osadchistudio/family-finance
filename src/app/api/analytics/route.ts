@@ -5,6 +5,8 @@ import { Decimal } from 'decimal.js';
 import { buildPeriods, getPeriodKey } from '@/lib/period-utils';
 import { getPeriodModeSetting } from '@/lib/system-settings';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;

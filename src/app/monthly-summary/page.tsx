@@ -6,6 +6,8 @@ import { getPeriodModeSetting } from '@/lib/system-settings';
 import { PeriodMode, PeriodDefinition, buildPeriodLabels, buildPeriods, getPeriodKey } from '@/lib/period-utils';
 import { MonthlySummaryView } from '@/components/monthly-summary/MonthlySummaryView';
 
+export const dynamic = 'force-dynamic';
+
 interface MonthAggregate {
   income: Decimal;
   expense: Decimal;

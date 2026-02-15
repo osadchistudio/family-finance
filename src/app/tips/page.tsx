@@ -5,6 +5,8 @@ import { Lightbulb, TrendingDown, TrendingUp, AlertTriangle, Award } from 'lucid
 import { getPeriodModeSetting } from '@/lib/system-settings';
 import { buildPeriods, getPeriodKey, PeriodMode } from '@/lib/period-utils';
 
+export const dynamic = 'force-dynamic';
+
 interface Tip {
   type: 'overspend' | 'underspend' | 'warning' | 'positive' | 'general';
   title: string;

@@ -25,6 +25,31 @@ Last updated: 2026-02-15
 
 ## Behavior updates
 
+### 2026-02-15 - Period-mode setting now propagates immediately (dynamic pages + refresh)
+Why:
+- After saving period mode in Settings, some pages could still display old mode due static pre-render caching.
+- Needed immediate consistency across pages after changing period mode.
+
+What changed:
+- Marked key analytics pages as dynamic runtime-rendered:
+  - `/` dashboard
+  - `/monthly-summary`
+  - `/tips`
+- Marked `/api/analytics` as dynamic runtime response.
+- Added `router.refresh()` on successful period-mode save in Settings to refresh server components immediately.
+
+Files touched:
+- `/src/app/page.tsx`
+- `/src/app/monthly-summary/page.tsx`
+- `/src/app/tips/page.tsx`
+- `/src/app/api/analytics/route.ts`
+- `/src/app/settings/page.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Pages now render per-request (expected slight server-load increase).
+
 ### 2026-02-15 - Global period mode moved to Settings and applied across pages
 Why:
 - Period mode (`1-1` calendar vs `10-10` billing cycle) needed to be a system setting instead of a local toggle in a single page.

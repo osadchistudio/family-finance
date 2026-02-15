@@ -9,6 +9,8 @@ import { Decimal } from 'decimal.js';
 import { buildPeriodLabels, buildPeriods, getPeriodKey, PeriodMode } from '@/lib/period-utils';
 import { getPeriodModeSetting } from '@/lib/system-settings';
 
+export const dynamic = 'force-dynamic';
+
 async function getAnalyticsData(periodMode: PeriodMode) {
   const months = 6;
   const periods = buildPeriods(periodMode, dayjs(), months);

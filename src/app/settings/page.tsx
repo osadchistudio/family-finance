@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { Key, Eye, EyeOff, Save, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 type PeriodMode = 'calendar' | 'billing';
 
 export default function SettingsPage() {
+  const router = useRouter();
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -106,6 +108,7 @@ export default function SettingsPage() {
 
       if (!response.ok) throw new Error('Failed to save');
       setPeriodModeMessage({ type: 'success', text: 'סוג התקופה נשמר בהצלחה!' });
+      router.refresh();
     } catch {
       setPeriodModeMessage({ type: 'error', text: 'שגיאה בשמירת סוג התקופה' });
     } finally {

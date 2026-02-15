@@ -2,6 +2,8 @@ import { prisma } from '@/lib/prisma';
 import dayjs from 'dayjs';
 import { Decimal } from 'decimal.js';
 import { Lightbulb, TrendingDown, TrendingUp, AlertTriangle, Award } from 'lucide-react';
+import { getPeriodModeSetting } from '@/lib/system-settings';
+import { buildPeriods, getPeriodKey, PeriodMode } from '@/lib/period-utils';
 
 interface Tip {
   type: 'overspend' | 'underspend' | 'warning' | 'positive' | 'general';
@@ -10,11 +12,12 @@ interface Tip {
   icon: string;
 }
 
-async function generateTips(): Promise<Tip[]> {
+async function generateTips(periodMode: PeriodMode): Promise<Tip[]> {
   const tips: Tip[] = [];
 
-  // Get transactions from last 3 months
-  const startDate = dayjs().subtract(3, 'month').startOf('month').toDate();
+  // Get transactions from last 3 periods in selected mode
+  const periods = buildPeriods(periodMode, dayjs(), 3);
+  const startDate = periods[0].startDate.startOf('day').toDate();
 
   const transactions = await prisma.transaction.findMany({
     where: {
@@ -34,15 +37,15 @@ async function generateTips(): Promise<Tip[]> {
   }
 
   // Calculate category spending for current vs previous month
-  const currentMonth = dayjs().format('YYYY-MM');
-  const lastMonth = dayjs().subtract(1, 'month').format('YYYY-MM');
+  const currentPeriod = periods[periods.length - 1]?.key || getPeriodKey(dayjs(), periodMode);
+  const lastPeriod = periods[periods.length - 2]?.key || currentPeriod;
 
   const categorySpending: Record<string, { current: Decimal; previous: Decimal; name: string; icon: string }> = {};
 
   for (const tx of transactions) {
     if (!tx.category || parseFloat(tx.amount.toString()) >= 0) continue;
 
-    const monthKey = dayjs(tx.date).format('YYYY-MM');
+    const monthKey = getPeriodKey(dayjs(tx.date), periodMode);
     const catId = tx.category.id;
     const amount = new Decimal(tx.amount.toString()).abs();
 
@@ -55,9 +58,9 @@ async function generateTips(): Promise<Tip[]> {
       };
     }
 
-    if (monthKey === currentMonth) {
+    if (monthKey === currentPeriod) {
       categorySpending[catId].current = categorySpending[catId].current.plus(amount);
-    } else if (monthKey === lastMonth) {
+    } else if (monthKey === lastPeriod) {
       categorySpending[catId].previous = categorySpending[catId].previous.plus(amount);
     }
   }
@@ -111,7 +114,8 @@ async function generateTips(): Promise<Tip[]> {
 }
 
 export default async function TipsPage() {
-  const tips = await generateTips();
+  const periodMode = await getPeriodModeSetting();
+  const tips = await generateTips(periodMode);
 
   const iconComponents = {
     overspend: AlertTriangle,
@@ -134,7 +138,7 @@ export default async function TipsPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">טיפים לחיסכון</h1>
         <p className="text-gray-600 mt-1">
-          המלצות מותאמות אישית בהתאם לדפוסי ההוצאות שלך
+          המלצות מותאמות אישית בהתאם לדפוסי ההוצאות שלך ({periodMode === 'billing' ? 'מחזור 10-10' : 'חודש קלנדרי'})
         </p>
       </div>
 

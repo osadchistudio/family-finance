@@ -6,11 +6,14 @@ import { CategoryAveragesList } from '@/components/dashboard/CategoryAveragesLis
 import { RecentTransactions } from '@/components/dashboard/RecentTransactions';
 import dayjs from 'dayjs';
 import { Decimal } from 'decimal.js';
+import { buildPeriodLabels, buildPeriods, getPeriodKey, PeriodMode } from '@/lib/period-utils';
+import { getPeriodModeSetting } from '@/lib/system-settings';
 
-async function getAnalyticsData() {
+async function getAnalyticsData(periodMode: PeriodMode) {
   const months = 6;
-  const startDate = dayjs().subtract(months - 1, 'month').startOf('month').toDate();
-  const endDate = dayjs().endOf('month').toDate();
+  const periods = buildPeriods(periodMode, dayjs(), months);
+  const startDate = periods[0].startDate.startOf('day').toDate();
+  const endDate = periods[periods.length - 1].endDate.endOf('day').toDate();
 
   const transactions = await prisma.transaction.findMany({
     where: {
@@ -26,13 +29,14 @@ async function getAnalyticsData() {
   let totalIncome = new Decimal(0);
   let totalExpense = new Decimal(0);
 
-  for (const tx of transactions) {
-    const monthKey = dayjs(tx.date).format('YYYY-MM');
-    const amount = new Decimal(tx.amount.toString());
+  for (const period of periods) {
+    monthlyData[period.key] = { income: new Decimal(0), expense: new Decimal(0) };
+  }
 
-    if (!monthlyData[monthKey]) {
-      monthlyData[monthKey] = { income: new Decimal(0), expense: new Decimal(0) };
-    }
+  for (const tx of transactions) {
+    const monthKey = getPeriodKey(dayjs(tx.date), periodMode);
+    const amount = new Decimal(tx.amount.toString());
+    if (!monthlyData[monthKey]) continue;
 
     if (amount.greaterThan(0)) {
       monthlyData[monthKey].income = monthlyData[monthKey].income.plus(amount);
@@ -56,24 +60,22 @@ async function getAnalyticsData() {
   }
 
   // Use only months that actually have transactions to avoid skewed averages.
-  const monthsWithData = Math.max(1, Object.keys(monthlyData).length);
+  const monthsWithData = Math.max(
+    1,
+    Object.values(monthlyData).filter((entry) => entry.income.greaterThan(0) || entry.expense.greaterThan(0)).length
+  );
 
   // Monthly trends
-  const monthlyTrends = [];
-  const hebrewMonths = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
-
-  for (let i = months - 1; i >= 0; i--) {
-    const month = dayjs().subtract(i, 'month');
-    const key = month.format('YYYY-MM');
-    const data = monthlyData[key] || { income: new Decimal(0), expense: new Decimal(0) };
-    monthlyTrends.push({
-      month: month.format('MM/YYYY'),
-      monthHebrew: hebrewMonths[month.month()],
+  const monthlyTrends = periods.map((period) => {
+    const data = monthlyData[period.key] || { income: new Decimal(0), expense: new Decimal(0) };
+    return {
+      month: period.key,
+      monthHebrew: period.chartLabel,
       income: data.income.toNumber(),
       expense: data.expense.toNumber(),
-      balance: data.income.minus(data.expense).toNumber()
-    });
-  }
+      balance: data.income.minus(data.expense).toNumber(),
+    };
+  });
 
   // Category breakdown
   const categoryBreakdown = Object.values(categoryTotals)
@@ -95,6 +97,7 @@ async function getAnalyticsData() {
     averageMonthlyBalance,
     averageMonthlySavings: Math.max(0, averageMonthlyBalance),
     monthsWithData,
+    periodLabel: buildPeriodLabels(periodMode).short,
     monthlyTrends,
     categoryBreakdown
   };
@@ -122,7 +125,8 @@ async function getRecentTransactions() {
 }
 
 export default async function HomePage() {
-  const analytics = await getAnalyticsData();
+  const periodMode = await getPeriodModeSetting();
+  const analytics = await getAnalyticsData(periodMode);
   const recentTransactions = await getRecentTransactions();
 
   return (
@@ -131,7 +135,7 @@ export default async function HomePage() {
         <h1 className="text-2xl font-bold text-gray-900">לוח בקרה</h1>
         <div className="text-sm text-gray-500 text-left">
           <p>{dayjs().format('DD/MM/YYYY')}</p>
-          <p>ממוצע חודשי לפי {analytics.monthsWithData} חודשים</p>
+          <p>ממוצע לפי {analytics.monthsWithData} {periodMode === 'billing' ? 'מחזורים' : 'חודשים'} ({analytics.periodLabel})</p>
         </div>
       </div>
 

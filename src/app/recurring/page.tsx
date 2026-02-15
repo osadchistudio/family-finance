@@ -2,6 +2,8 @@ import { prisma } from '@/lib/prisma';
 import { RecurringExpensesList } from '@/components/recurring/RecurringExpensesList';
 import { Decimal } from 'decimal.js';
 import dayjs from 'dayjs';
+import { getPeriodModeSetting } from '@/lib/system-settings';
+import { getPeriodKey, PeriodMode } from '@/lib/period-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +39,7 @@ async function getRecurringTransactions() {
   }));
 }
 
-async function getIncomeBaseline() {
+async function getIncomeBaseline(periodMode: PeriodMode) {
   const transactions = await prisma.transaction.findMany({
     where: { isExcluded: false },
     select: {
@@ -52,7 +54,7 @@ async function getIncomeBaseline() {
     const amount = new Decimal(tx.amount.toString());
     if (amount.lte(0)) continue;
 
-    const monthKey = dayjs(tx.date).format('YYYY-MM');
+    const monthKey = getPeriodKey(dayjs(tx.date), periodMode);
     if (!incomeByMonth[monthKey]) {
       incomeByMonth[monthKey] = new Decimal(0);
     }
@@ -69,9 +71,10 @@ async function getIncomeBaseline() {
 }
 
 export default async function RecurringPage() {
+  const periodMode = await getPeriodModeSetting();
   const [transactions, incomeBaseline] = await Promise.all([
     getRecurringTransactions(),
-    getIncomeBaseline()
+    getIncomeBaseline(periodMode)
   ]);
 
   return (
@@ -79,7 +82,7 @@ export default async function RecurringPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">הוצאות קבועות</h1>
         <p className="text-gray-600 mt-1">
-          {transactions.length} תנועות שסומנו כקבועות בהיסטוריה
+          {transactions.length} תנועות שסומנו כקבועות בהיסטוריה · חישוב בסיס הכנסה לפי {periodMode === 'billing' ? 'מחזור 10-10' : 'חודש קלנדרי'}
         </p>
       </div>
 

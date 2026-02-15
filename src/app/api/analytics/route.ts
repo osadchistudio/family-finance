@@ -2,14 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import dayjs from 'dayjs';
 import { Decimal } from 'decimal.js';
+import { buildPeriods, getPeriodKey } from '@/lib/period-utils';
+import { getPeriodModeSetting } from '@/lib/system-settings';
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const months = parseInt(searchParams.get('months') || '6');
+    const periodMode = await getPeriodModeSetting();
 
-    const startDate = dayjs().subtract(months, 'month').startOf('month').toDate();
-    const endDate = dayjs().endOf('month').toDate();
+    const periods = buildPeriods(periodMode, dayjs(), months);
+    const startDate = periods[0].startDate.startOf('day').toDate();
+    const endDate = periods[periods.length - 1].endDate.endOf('day').toDate();
 
     // Get all transactions in the period
     const transactions = await prisma.transaction.findMany({
@@ -24,13 +28,14 @@ export async function GET(request: NextRequest) {
     const monthlyData: Record<string, { income: Decimal; expense: Decimal }> = {};
     const categoryTotals: Record<string, { name: string; total: Decimal; color: string; icon: string }> = {};
 
-    for (const tx of transactions) {
-      const monthKey = dayjs(tx.date).format('YYYY-MM');
-      const amount = new Decimal(tx.amount.toString());
+    for (const period of periods) {
+      monthlyData[period.key] = { income: new Decimal(0), expense: new Decimal(0) };
+    }
 
-      if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = { income: new Decimal(0), expense: new Decimal(0) };
-      }
+    for (const tx of transactions) {
+      const monthKey = getPeriodKey(dayjs(tx.date), periodMode);
+      const amount = new Decimal(tx.amount.toString());
+      if (!monthlyData[monthKey]) continue;
 
       if (amount.greaterThan(0)) {
         monthlyData[monthKey].income = monthlyData[monthKey].income.plus(amount);
@@ -53,23 +58,20 @@ export async function GET(request: NextRequest) {
     }
 
     // Current month stats
-    const currentMonth = dayjs().format('YYYY-MM');
+    const currentMonth = periods[periods.length - 1]?.key || dayjs().format('YYYY-MM');
     const currentMonthData = monthlyData[currentMonth] || { income: new Decimal(0), expense: new Decimal(0) };
 
     // Format monthly trends for chart
-    const monthlyTrends = [];
-    for (let i = months - 1; i >= 0; i--) {
-      const month = dayjs().subtract(i, 'month');
-      const key = month.format('YYYY-MM');
-      const data = monthlyData[key] || { income: new Decimal(0), expense: new Decimal(0) };
-      monthlyTrends.push({
-        month: month.format('MM/YYYY'),
-        monthHebrew: getHebrewMonth(month.month()),
+    const monthlyTrends = periods.map((period) => {
+      const data = monthlyData[period.key] || { income: new Decimal(0), expense: new Decimal(0) };
+      return {
+        month: period.key,
+        monthHebrew: period.chartLabel,
         income: data.income.toNumber(),
         expense: data.expense.toNumber(),
         balance: data.income.minus(data.expense).toNumber()
-      });
-    }
+      };
+    });
 
     // Format category breakdown
     const categoryBreakdown = Object.values(categoryTotals)
@@ -86,7 +88,11 @@ export async function GET(request: NextRequest) {
       (sum, m) => sum.plus(m.expense),
       new Decimal(0)
     );
-    const avgMonthlyExpense = totalExpense.dividedBy(Math.max(Object.keys(monthlyData).length, 1));
+    const periodsWithData = Math.max(
+      1,
+      Object.values(monthlyData).filter((entry) => entry.income.greaterThan(0) || entry.expense.greaterThan(0)).length
+    );
+    const avgMonthlyExpense = totalExpense.dividedBy(periodsWithData);
 
     return NextResponse.json({
       summary: {
@@ -97,7 +103,8 @@ export async function GET(request: NextRequest) {
       },
       monthlyTrends,
       categoryBreakdown,
-      totalTransactions: transactions.length
+      totalTransactions: transactions.length,
+      periodMode
     });
   } catch (error) {
     console.error('Analytics error:', error);
@@ -106,9 +113,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-function getHebrewMonth(month: number): string {
-  const months = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
-  return months[month];
 }

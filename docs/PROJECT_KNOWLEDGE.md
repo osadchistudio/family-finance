@@ -25,10 +25,51 @@ Last updated: 2026-02-15
 
 ## Behavior updates
 
+### 2026-02-15 - Global period mode moved to Settings and applied across pages
+Why:
+- Period mode (`1-1` calendar vs `10-10` billing cycle) needed to be a system setting instead of a local toggle in a single page.
+- Users needed one centralized configuration that affects all monthly-based analytics consistently.
+
+What changed:
+- Added new Settings API for period mode:
+  - `GET /api/settings/period-mode`
+  - `POST /api/settings/period-mode`
+- Added Settings UI section to choose and save:
+  - `חודש קלנדרי (1-1)`
+  - `מחזור חיוב (10-10)`
+- Removed local mode toggle from monthly summary and made it read global setting.
+- Monthly summary now loads and computes by configured period mode only.
+- Dashboard, tips, recurring income baseline, and analytics API now all compute period buckets using the same global setting.
+- Added shared period utility module for:
+  - period normalization,
+  - period key derivation,
+  - period window generation and labels.
+
+Files touched:
+- `/src/app/settings/page.tsx`
+- `/src/app/api/settings/period-mode/route.ts`
+- `/src/lib/system-settings.ts`
+- `/src/lib/period-utils.ts`
+- `/src/app/monthly-summary/page.tsx`
+- `/src/components/monthly-summary/MonthlySummaryView.tsx`
+- `/src/components/monthly-summary/MonthCard.tsx`
+- `/src/components/monthly-summary/MonthDetail.tsx`
+- `/src/components/monthly-summary/CategoryExpenseTrendChart.tsx`
+- `/src/app/page.tsx`
+- `/src/app/recurring/page.tsx`
+- `/src/app/tips/page.tsx`
+- `/src/app/api/analytics/route.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed (uses existing `Setting` table).
+- Changing period mode triggers revalidation for `/`, `/monthly-summary`, `/recurring`, `/tips`.
+
 ### 2026-02-15 - Monthly summary supports cycle mode toggle (calendar 1-1 vs billing cycle 10-10)
 Why:
 - Cash-flow analysis needs to support both standard calendar months and real billing cycles where credit-card reset is on day 10.
 - Users needed comparable averages/graphs/cards under each mode without leaving the page.
+- Note: this approach was later centralized to global system settings (`period_mode`) so mode is now controlled from Settings page.
 
 What changed:
 - Added toggle in monthly summary UI:

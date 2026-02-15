@@ -1,11 +1,10 @@
-import { prisma } from '@/lib/prisma';
-import { getHebrewMonthName } from '@/lib/formatters';
-import { MonthlySummaryView } from '@/components/monthly-summary/MonthlySummaryView';
-import dayjs, { Dayjs } from 'dayjs';
-import { Decimal } from 'decimal.js';
 import { Prisma } from '@prisma/client';
-
-type PeriodMode = 'calendar' | 'billing';
+import { Decimal } from 'decimal.js';
+import dayjs from 'dayjs';
+import { prisma } from '@/lib/prisma';
+import { getPeriodModeSetting } from '@/lib/system-settings';
+import { PeriodMode, PeriodDefinition, buildPeriodLabels, buildPeriods, getPeriodKey } from '@/lib/period-utils';
+import { MonthlySummaryView } from '@/components/monthly-summary/MonthlySummaryView';
 
 interface MonthAggregate {
   income: Decimal;
@@ -17,16 +16,6 @@ interface MonthAggregate {
     color: string;
     total: Decimal;
   }>;
-}
-
-interface PeriodDefinition {
-  key: string;
-  label: string;
-  subLabel: string;
-  chartLabel: string;
-  startDate: Dayjs;
-  endDate: Dayjs;
-  isCurrent: boolean;
 }
 
 interface MonthlyDataset {
@@ -50,65 +39,9 @@ interface MonthlyDataset {
 
 type TransactionWithCategory = Prisma.TransactionGetPayload<{ include: { category: true } }>;
 
-function getCurrentBillingCycleStart(referenceDate: Dayjs) {
-  const cutoffDay = 10;
-  const currentMonthCutoff = referenceDate.startOf('month').date(cutoffDay);
-  return referenceDate.date() >= cutoffDay
-    ? currentMonthCutoff
-    : currentMonthCutoff.subtract(1, 'month');
-}
-
-function buildPeriods(mode: PeriodMode, now: Dayjs, count = 12): PeriodDefinition[] {
-  const periods: PeriodDefinition[] = [];
-
-  if (mode === 'calendar') {
-    for (let i = count - 1; i >= 0; i--) {
-      const startDate = now.subtract(i, 'month').startOf('month');
-      const endDate = startDate.endOf('month');
-      periods.push({
-        key: startDate.format('YYYY-MM'),
-        label: getHebrewMonthName(startDate.month()),
-        subLabel: String(startDate.year()),
-        chartLabel: getHebrewMonthName(startDate.month()),
-        startDate,
-        endDate,
-        isCurrent: i === 0,
-      });
-    }
-    return periods;
-  }
-
-  const currentCycleStart = getCurrentBillingCycleStart(now);
-  for (let i = count - 1; i >= 0; i--) {
-    const startDate = currentCycleStart.subtract(i, 'month');
-    const endDate = startDate.add(1, 'month').subtract(1, 'day');
-    periods.push({
-      key: startDate.format('YYYY-MM'),
-      label: getHebrewMonthName(startDate.month()),
-      subLabel: `${startDate.format('DD/MM')} - ${endDate.format('DD/MM/YYYY')}`,
-      chartLabel: getHebrewMonthName(startDate.month()),
-      startDate,
-      endDate,
-      isCurrent: i === 0,
-    });
-  }
-
-  return periods;
-}
-
-function getPeriodKey(txDate: Dayjs, mode: PeriodMode): string {
-  if (mode === 'calendar') return txDate.format('YYYY-MM');
-
-  const cutoffDay = 10;
-  const cycleStart = txDate.date() >= cutoffDay
-    ? txDate.startOf('month').date(cutoffDay)
-    : txDate.subtract(1, 'month').startOf('month').date(cutoffDay);
-  return cycleStart.format('YYYY-MM');
-}
-
 function buildDataset(
   transactions: TransactionWithCategory[],
-  mode: PeriodMode,
+  periodMode: PeriodMode,
   periods: PeriodDefinition[]
 ): MonthlyDataset {
   const monthMap: Record<string, MonthAggregate> = {};
@@ -122,7 +55,7 @@ function buildDataset(
   }
 
   for (const tx of transactions) {
-    const periodKey = getPeriodKey(dayjs(tx.date), mode);
+    const periodKey = getPeriodKey(dayjs(tx.date), periodMode);
     if (!monthMap[periodKey]) continue;
 
     const amount = new Decimal(tx.amount.toString());
@@ -135,24 +68,24 @@ function buildDataset(
     }
 
     if (tx.category && amount.lessThan(0)) {
-      const catId = tx.category.id;
-      if (!monthMap[periodKey].categories[catId]) {
-        monthMap[periodKey].categories[catId] = {
+      const categoryId = tx.category.id;
+      if (!monthMap[periodKey].categories[categoryId]) {
+        monthMap[periodKey].categories[categoryId] = {
           name: tx.category.name,
           icon: tx.category.icon || '',
           color: tx.category.color || '#888888',
           total: new Decimal(0),
         };
       }
-      monthMap[periodKey].categories[catId].total = monthMap[periodKey].categories[catId].total.plus(amount.abs());
+      monthMap[periodKey].categories[categoryId].total = monthMap[periodKey].categories[categoryId].total.plus(amount.abs());
     }
   }
 
   const months = [...periods]
     .reverse()
     .map((period) => {
-      const agg = monthMap[period.key];
-      const topCategories = Object.values(agg.categories)
+      const aggregate = monthMap[period.key];
+      const topCategories = Object.values(aggregate.categories)
         .map((category) => ({
           name: category.name,
           icon: category.icon,
@@ -170,10 +103,10 @@ function buildDataset(
         periodStart: period.startDate.format('YYYY-MM-DD'),
         periodEnd: period.endDate.format('YYYY-MM-DD'),
         isCurrentPeriod: period.isCurrent,
-        income: agg.income.toNumber(),
-        expense: agg.expense.toNumber(),
-        balance: agg.income.minus(agg.expense).toNumber(),
-        transactionCount: agg.transactionCount,
+        income: aggregate.income.toNumber(),
+        expense: aggregate.expense.toNumber(),
+        balance: aggregate.income.minus(aggregate.expense).toNumber(),
+        transactionCount: aggregate.transactionCount,
         topCategories,
       };
     });
@@ -182,8 +115,8 @@ function buildDataset(
   const categoryOptionsMap: Record<string, { id: string; name: string; icon: string; color: string }> = {};
 
   for (const period of periods) {
-    const agg = monthMap[period.key];
-    categoryBreakdowns[period.key] = Object.entries(agg.categories)
+    const aggregate = monthMap[period.key];
+    categoryBreakdowns[period.key] = Object.entries(aggregate.categories)
       .map(([categoryId, category]) => ({
         id: categoryId,
         name: category.name,
@@ -193,7 +126,7 @@ function buildDataset(
       }))
       .sort((a, b) => b.value - a.value);
 
-    for (const [categoryId, category] of Object.entries(agg.categories)) {
+    for (const [categoryId, category] of Object.entries(aggregate.categories)) {
       if (!categoryOptionsMap[categoryId]) {
         categoryOptionsMap[categoryId] = {
           id: categoryId,
@@ -205,48 +138,48 @@ function buildDataset(
     }
   }
 
-  const categoryOptions = Object.values(categoryOptionsMap).sort((a, b) => a.name.localeCompare(b.name, 'he'));
-
-  return { months, categoryBreakdowns, categoryOptions };
+  return {
+    months,
+    categoryBreakdowns,
+    categoryOptions: Object.values(categoryOptionsMap).sort((a, b) => a.name.localeCompare(b.name, 'he')),
+  };
 }
 
-async function getMonthlySummaryData() {
+async function getMonthlySummaryData(periodMode: PeriodMode) {
   const now = dayjs();
-  const calendarPeriods = buildPeriods('calendar', now);
-  const billingPeriods = buildPeriods('billing', now);
-
-  const allPeriods = [...calendarPeriods, ...billingPeriods];
-  const minStart = allPeriods.reduce((min, period) => (period.startDate.isBefore(min) ? period.startDate : min), allPeriods[0].startDate);
-  const maxEnd = allPeriods.reduce((max, period) => (period.endDate.isAfter(max) ? period.endDate : max), allPeriods[0].endDate);
+  const periods = buildPeriods(periodMode, now, 12);
+  const minStart = periods[0].startDate.startOf('day');
+  const maxEnd = periods[periods.length - 1].endDate.endOf('day');
 
   const transactions = await prisma.transaction.findMany({
     where: {
-      date: { gte: minStart.startOf('day').toDate(), lte: maxEnd.endOf('day').toDate() },
+      date: { gte: minStart.toDate(), lte: maxEnd.toDate() },
       isExcluded: false,
     },
     include: { category: true },
     orderBy: { date: 'desc' },
   });
 
-  const calendar = buildDataset(transactions, 'calendar', calendarPeriods);
-  const billing = buildDataset(transactions, 'billing', billingPeriods);
-
-  return { calendar, billing };
+  return buildDataset(transactions, periodMode, periods);
 }
 
 export default async function MonthlySummaryPage() {
-  const { calendar, billing } = await getMonthlySummaryData();
+  const periodMode = await getPeriodModeSetting();
+  const data = await getMonthlySummaryData(periodMode);
+  const labels = buildPeriodLabels(periodMode);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">סיכום חודשי</h1>
-        <p className="text-gray-600 mt-1">מעקב תזרים מזומנים לפי חודשים או מחזור חיוב</p>
+        <p className="text-gray-600 mt-1">מעקב תזרים מזומנים לפי {labels.short}</p>
       </div>
 
       <MonthlySummaryView
-        calendar={calendar}
-        billing={billing}
+        months={data.months}
+        categoryBreakdowns={data.categoryBreakdowns}
+        categoryOptions={data.categoryOptions}
+        periodMode={periodMode}
       />
     </div>
   );

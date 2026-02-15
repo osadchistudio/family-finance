@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Key, Eye, EyeOff, Save, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
+type PeriodMode = 'calendar' | 'billing';
+
 export default function SettingsPage() {
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -10,6 +12,10 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasExistingKey, setHasExistingKey] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('calendar');
+  const [isLoadingPeriodMode, setIsLoadingPeriodMode] = useState(true);
+  const [isSavingPeriodMode, setIsSavingPeriodMode] = useState(false);
+  const [periodModeMessage, setPeriodModeMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     // Check if API key exists
@@ -23,6 +29,18 @@ export default function SettingsPage() {
       })
       .catch(() => {})
       .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/settings/period-mode')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.periodMode === 'billing' || data.periodMode === 'calendar') {
+          setPeriodMode(data.periodMode);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setIsLoadingPeriodMode(false));
   }, []);
 
   const handleSave = async () => {
@@ -72,6 +90,26 @@ export default function SettingsPage() {
       setMessage({ type: 'error', text: 'שגיאה במחיקת המפתח' });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSavePeriodMode = async () => {
+    setIsSavingPeriodMode(true);
+    setPeriodModeMessage(null);
+
+    try {
+      const response = await fetch('/api/settings/period-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ periodMode }),
+      });
+
+      if (!response.ok) throw new Error('Failed to save');
+      setPeriodModeMessage({ type: 'success', text: 'סוג התקופה נשמר בהצלחה!' });
+    } catch {
+      setPeriodModeMessage({ type: 'error', text: 'שגיאה בשמירת סוג התקופה' });
+    } finally {
+      setIsSavingPeriodMode(false);
     }
   };
 
@@ -190,6 +228,89 @@ export default function SettingsPage() {
             <li>• ניתן למחוק את המפתח בכל עת</li>
           </ul>
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-6 max-w-2xl">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-3 bg-blue-100 rounded-lg">
+            <span className="text-xl">📅</span>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">סוג תקופה חודשי</h2>
+            <p className="text-sm text-gray-500">
+              בחירה זו משפיעה על כל המסכים שמחשבים נתונים חודשיים
+            </p>
+          </div>
+        </div>
+
+        {isLoadingPeriodMode ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setPeriodMode('calendar')}
+                className={`border rounded-lg px-4 py-3 text-right transition-colors ${
+                  periodMode === 'calendar'
+                    ? 'border-blue-500 bg-blue-50 text-blue-800'
+                    : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                }`}
+              >
+                <p className="font-medium">חודש קלנדרי (1-1)</p>
+                <p className="text-xs mt-1 text-gray-500">חישוב לפי תחילת/סוף חודש רגיל</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPeriodMode('billing')}
+                className={`border rounded-lg px-4 py-3 text-right transition-colors ${
+                  periodMode === 'billing'
+                    ? 'border-blue-500 bg-blue-50 text-blue-800'
+                    : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                }`}
+              >
+                <p className="font-medium">מחזור חיוב (10-10)</p>
+                <p className="text-xs mt-1 text-gray-500">חישוב מ-10 עד 9 בחודש הבא</p>
+              </button>
+            </div>
+
+            {periodModeMessage && (
+              <div className={`flex items-center gap-2 p-3 rounded-lg ${
+                periodModeMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+              }`}>
+                {periodModeMessage.type === 'success' ? (
+                  <CheckCircle className="h-5 w-5" />
+                ) : (
+                  <AlertCircle className="h-5 w-5" />
+                )}
+                <span className="text-sm">{periodModeMessage.text}</span>
+              </div>
+            )}
+
+            <button
+              onClick={handleSavePeriodMode}
+              disabled={isSavingPeriodMode}
+              className={`
+                w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium
+                transition-colors
+                ${isSavingPeriodMode
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+                }
+              `}
+            >
+              {isSavingPeriodMode ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Save className="h-5 w-5" />
+              )}
+              שמור סוג תקופה
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

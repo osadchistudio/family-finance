@@ -92,6 +92,11 @@ export function MonthDetail({ data, categoryBreakdown, onBack }: MonthDetailProp
           <p className="text-gray-500 text-sm">{data.subLabel} · {periodDisplay} · {data.transactionCount} תנועות</p>
         </div>
       </div>
+      {!data.isDataComplete && data.missingSources.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          נתונים חלקיים לתקופה זו. חסר מקור: {data.missingSources.join(', ')}.
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -6,7 +6,7 @@ import { CategoryAveragesList } from '@/components/dashboard/CategoryAveragesLis
 import { RecentTransactions } from '@/components/dashboard/RecentTransactions';
 import dayjs from 'dayjs';
 import { Decimal } from 'decimal.js';
-import { buildPeriodLabels, buildPeriods, getPeriodKey, PeriodMode } from '@/lib/period-utils';
+import { buildPeriodLabels, buildPeriods, getPeriodKey, isBankInstitution, isCreditInstitution, PeriodMode } from '@/lib/period-utils';
 import { getPeriodModeSetting } from '@/lib/system-settings';
 
 export const dynamic = 'force-dynamic';
@@ -22,17 +22,15 @@ async function getAnalyticsData(periodMode: PeriodMode) {
       date: { gte: startDate, lte: endDate },
       isExcluded: false
     },
-    include: { category: true }
+    include: { category: true, account: true }
   });
 
   // Calculate monthly totals
-  const monthlyData: Record<string, { income: Decimal; expense: Decimal }> = {};
-  const categoryTotals: Record<string, { name: string; total: Decimal; color: string; icon: string }> = {};
-  let totalIncome = new Decimal(0);
-  let totalExpense = new Decimal(0);
+  const monthlyData: Record<string, { income: Decimal; expense: Decimal; bankCount: number; creditCount: number }> = {};
+  const categoryTotalsByPeriod: Record<string, { name: string; color: string; icon: string; totals: Record<string, Decimal> }> = {};
 
   for (const period of periods) {
-    monthlyData[period.key] = { income: new Decimal(0), expense: new Decimal(0) };
+    monthlyData[period.key] = { income: new Decimal(0), expense: new Decimal(0), bankCount: 0, creditCount: 0 };
   }
 
   for (const tx of transactions) {
@@ -42,34 +40,49 @@ async function getAnalyticsData(periodMode: PeriodMode) {
 
     if (amount.greaterThan(0)) {
       monthlyData[monthKey].income = monthlyData[monthKey].income.plus(amount);
-      totalIncome = totalIncome.plus(amount);
     } else {
       monthlyData[monthKey].expense = monthlyData[monthKey].expense.plus(amount.abs());
-      totalExpense = totalExpense.plus(amount.abs());
+    }
+
+    if (isBankInstitution(tx.account?.institution)) {
+      monthlyData[monthKey].bankCount++;
+    }
+    if (isCreditInstitution(tx.account?.institution)) {
+      monthlyData[monthKey].creditCount++;
     }
 
     if (tx.category && amount.lessThan(0)) {
-      if (!categoryTotals[tx.category.id]) {
-        categoryTotals[tx.category.id] = {
+      if (!categoryTotalsByPeriod[tx.category.id]) {
+        categoryTotalsByPeriod[tx.category.id] = {
           name: tx.category.name,
-          total: new Decimal(0),
           color: tx.category.color || '#888888',
-          icon: tx.category.icon || ''
+          icon: tx.category.icon || '',
+          totals: {},
         };
       }
-      categoryTotals[tx.category.id].total = categoryTotals[tx.category.id].total.plus(amount.abs());
+      if (!categoryTotalsByPeriod[tx.category.id].totals[monthKey]) {
+        categoryTotalsByPeriod[tx.category.id].totals[monthKey] = new Decimal(0);
+      }
+      categoryTotalsByPeriod[tx.category.id].totals[monthKey] = categoryTotalsByPeriod[tx.category.id].totals[monthKey].plus(amount.abs());
     }
   }
 
-  // Use only months that actually have transactions to avoid skewed averages.
-  const monthsWithData = Math.max(
-    1,
-    Object.values(monthlyData).filter((entry) => entry.income.greaterThan(0) || entry.expense.greaterThan(0)).length
-  );
+  const requiresBank = transactions.some((tx) => isBankInstitution(tx.account?.institution));
+  const requiresCredit = transactions.some((tx) => isCreditInstitution(tx.account?.institution));
+  const periodEntries = Object.entries(monthlyData);
+  const periodKeysWithData = periodEntries
+    .filter(([, entry]) => entry.income.greaterThan(0) || entry.expense.greaterThan(0))
+    .map(([key]) => key);
+  const completePeriodKeys = periodEntries
+    .filter(([, entry]) => (entry.income.greaterThan(0) || entry.expense.greaterThan(0)))
+    .filter(([, entry]) => (!requiresBank || entry.bankCount > 0) && (!requiresCredit || entry.creditCount > 0))
+    .map(([key]) => key);
+  const periodsUsedForAverage = completePeriodKeys.length > 0 ? completePeriodKeys : periodKeysWithData;
+  const periodsForAverageCount = Math.max(periodsUsedForAverage.length, 1);
 
   // Monthly trends
   const monthlyTrends = periods.map((period) => {
-    const data = monthlyData[period.key] || { income: new Decimal(0), expense: new Decimal(0) };
+    const data = monthlyData[period.key] || { income: new Decimal(0), expense: new Decimal(0), bankCount: 0, creditCount: 0 };
     return {
       month: period.key,
       monthHebrew: period.chartLabel,
@@ -80,17 +93,26 @@ async function getAnalyticsData(periodMode: PeriodMode) {
   });
 
   // Category breakdown
-  const categoryBreakdown = Object.values(categoryTotals)
-    .map(cat => ({
-      name: cat.name,
-      value: cat.total.div(monthsWithData).toNumber(),
-      color: cat.color,
-      icon: cat.icon
-    }))
+  const categoryBreakdown = Object.values(categoryTotalsByPeriod)
+    .map((category) => {
+      const totalInCompletePeriods = periodsUsedForAverage.reduce(
+        (sum, periodKey) => sum.plus(category.totals[periodKey] || 0),
+        new Decimal(0)
+      );
+      return {
+        name: category.name,
+        value: totalInCompletePeriods.div(periodsForAverageCount).toNumber(),
+        color: category.color,
+        icon: category.icon
+      };
+    })
+    .filter((category) => category.value > 0)
     .sort((a, b) => b.value - a.value);
 
-  const averageMonthlyIncome = totalIncome.div(monthsWithData).toNumber();
-  const averageMonthlyExpense = totalExpense.div(monthsWithData).toNumber();
+  const totalIncome = periodsUsedForAverage.reduce((sum, key) => sum.plus(monthlyData[key].income), new Decimal(0));
+  const totalExpense = periodsUsedForAverage.reduce((sum, key) => sum.plus(monthlyData[key].expense), new Decimal(0));
+  const averageMonthlyIncome = totalIncome.div(periodsForAverageCount).toNumber();
+  const averageMonthlyExpense = totalExpense.div(periodsForAverageCount).toNumber();
   const averageMonthlyBalance = averageMonthlyIncome - averageMonthlyExpense;
 
   return {
@@ -98,7 +120,8 @@ async function getAnalyticsData(periodMode: PeriodMode) {
     averageMonthlyExpense,
     averageMonthlyBalance,
     averageMonthlySavings: Math.max(0, averageMonthlyBalance),
-    monthsWithData,
+    periodsUsedForAverageCount: periodsUsedForAverage.length,
+    incompletePeriodsWithDataCount: Math.max(0, periodKeysWithData.length - completePeriodKeys.length),
     periodLabel: buildPeriodLabels(periodMode).short,
     monthlyTrends,
     categoryBreakdown
@@ -137,7 +160,10 @@ export default async function HomePage() {
         <h1 className="text-2xl font-bold text-gray-900">לוח בקרה</h1>
         <div className="text-sm text-gray-500 text-left">
           <p>{dayjs().format('DD/MM/YYYY')}</p>
-          <p>ממוצע לפי {analytics.monthsWithData} {periodMode === 'billing' ? 'מחזורים' : 'חודשים'} ({analytics.periodLabel})</p>
+          <p>
+            ממוצע לפי {analytics.periodsUsedForAverageCount} {periodMode === 'billing' ? 'מחזורים' : 'חודשים'} ({analytics.periodLabel})
+            {analytics.incompletePeriodsWithDataCount > 0 && ` · ${analytics.incompletePeriodsWithDataCount} תקופות חלקיות לא נכללו`}
+          </p>
         </div>
       </div>
 

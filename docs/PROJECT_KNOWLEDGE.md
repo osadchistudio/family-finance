@@ -25,6 +25,33 @@ Last updated: 2026-02-15
 
 ## Behavior updates
 
+### 2026-02-15 - Partial periods detection (missing bank/credit source) with exclusion from averages
+Why:
+- Incomplete periods (for example period with only bank or only credit data) skewed high-level averages and gave misleading cash-flow picture.
+- Needed explicit indication on the period card when data sources are missing.
+
+What changed:
+- Added period completeness logic in monthly summary:
+  - If system has both source types in the analyzed window (bank + credit), a period is marked partial when one source is missing.
+- Added visual warning on period cards and period detail:
+  - `⚠️ חסר: עו״ש` / `⚠️ חסר: אשראי` (or both).
+- Monthly summary average cards now exclude partial periods from average denominator.
+- Dashboard (`/`) averages and category monthly averages now also exclude partial periods from denominator for consistent top-level stats.
+- Category trend average calculations now use complete periods with data (fallback to periods with data when no complete periods exist).
+
+Files touched:
+- `/src/lib/period-utils.ts`
+- `/src/app/monthly-summary/page.tsx`
+- `/src/components/monthly-summary/MonthCard.tsx`
+- `/src/components/monthly-summary/MonthDetail.tsx`
+- `/src/components/monthly-summary/MonthlySummaryView.tsx`
+- `/src/components/monthly-summary/CategoryExpenseTrendChart.tsx`
+- `/src/app/page.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-15 - Period-mode setting now propagates immediately (dynamic pages + refresh)
 Why:
 - After saving period mode in Settings, some pages could still display old mode due static pre-render caching.

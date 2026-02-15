@@ -3,7 +3,15 @@ import { Decimal } from 'decimal.js';
 import dayjs from 'dayjs';
 import { prisma } from '@/lib/prisma';
 import { getPeriodModeSetting } from '@/lib/system-settings';
-import { PeriodMode, PeriodDefinition, buildPeriodLabels, buildPeriods, getPeriodKey } from '@/lib/period-utils';
+import {
+  PeriodMode,
+  PeriodDefinition,
+  buildPeriodLabels,
+  buildPeriods,
+  getPeriodKey,
+  isBankInstitution,
+  isCreditInstitution,
+} from '@/lib/period-utils';
 import { MonthlySummaryView } from '@/components/monthly-summary/MonthlySummaryView';
 
 export const dynamic = 'force-dynamic';
@@ -12,6 +20,8 @@ interface MonthAggregate {
   income: Decimal;
   expense: Decimal;
   transactionCount: number;
+  bankTransactionCount: number;
+  creditTransactionCount: number;
   categories: Record<string, {
     name: string;
     icon: string;
@@ -29,6 +39,10 @@ interface MonthlyDataset {
     periodStart: string;
     periodEnd: string;
     isCurrentPeriod: boolean;
+    isDataComplete: boolean;
+    missingSources: string[];
+    hasBankActivity: boolean;
+    hasCreditActivity: boolean;
     income: number;
     expense: number;
     balance: number;
@@ -39,12 +53,13 @@ interface MonthlyDataset {
   categoryOptions: { id: string; name: string; icon: string; color: string }[];
 }
 
-type TransactionWithCategory = Prisma.TransactionGetPayload<{ include: { category: true } }>;
+type TransactionWithCategory = Prisma.TransactionGetPayload<{ include: { category: true; account: true } }>;
 
 function buildDataset(
   transactions: TransactionWithCategory[],
   periodMode: PeriodMode,
-  periods: PeriodDefinition[]
+  periods: PeriodDefinition[],
+  requiredSources: { requiresBank: boolean; requiresCredit: boolean }
 ): MonthlyDataset {
   const monthMap: Record<string, MonthAggregate> = {};
   for (const period of periods) {
@@ -52,6 +67,8 @@ function buildDataset(
       income: new Decimal(0),
       expense: new Decimal(0),
       transactionCount: 0,
+      bankTransactionCount: 0,
+      creditTransactionCount: 0,
       categories: {},
     };
   }
@@ -62,6 +79,12 @@ function buildDataset(
 
     const amount = new Decimal(tx.amount.toString());
     monthMap[periodKey].transactionCount++;
+    if (isBankInstitution(tx.account?.institution)) {
+      monthMap[periodKey].bankTransactionCount++;
+    }
+    if (isCreditInstitution(tx.account?.institution)) {
+      monthMap[periodKey].creditTransactionCount++;
+    }
 
     if (amount.greaterThan(0)) {
       monthMap[periodKey].income = monthMap[periodKey].income.plus(amount);
@@ -98,6 +121,15 @@ function buildDataset(
         .slice(0, 5);
 
       return {
+        isDataComplete:
+          (!requiredSources.requiresBank || aggregate.bankTransactionCount > 0) &&
+          (!requiredSources.requiresCredit || aggregate.creditTransactionCount > 0),
+        missingSources: [
+          ...(requiredSources.requiresBank && aggregate.bankTransactionCount === 0 ? ['עו״ש'] : []),
+          ...(requiredSources.requiresCredit && aggregate.creditTransactionCount === 0 ? ['אשראי'] : []),
+        ],
+        hasBankActivity: aggregate.bankTransactionCount > 0,
+        hasCreditActivity: aggregate.creditTransactionCount > 0,
         monthKey: period.key,
         label: period.label,
         subLabel: period.subLabel,
@@ -158,11 +190,16 @@ async function getMonthlySummaryData(periodMode: PeriodMode) {
       date: { gte: minStart.toDate(), lte: maxEnd.toDate() },
       isExcluded: false,
     },
-    include: { category: true },
+    include: { category: true, account: true },
     orderBy: { date: 'desc' },
   });
 
-  return buildDataset(transactions, periodMode, periods);
+  const requiredSources = {
+    requiresBank: transactions.some((tx) => isBankInstitution(tx.account?.institution)),
+    requiresCredit: transactions.some((tx) => isCreditInstitution(tx.account?.institution)),
+  };
+
+  return buildDataset(transactions, periodMode, periods, requiredSources);
 }
 
 export default async function MonthlySummaryPage() {

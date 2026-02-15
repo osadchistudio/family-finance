@@ -6,6 +6,8 @@ export type PeriodMode = 'calendar' | 'billing';
 export const PERIOD_MODE_SETTING_KEY = 'period_mode';
 export const DEFAULT_PERIOD_MODE: PeriodMode = 'calendar';
 const BILLING_CUTOFF_DAY = 10;
+const BANK_INSTITUTIONS = new Set(['BANK_HAPOALIM', 'BANK_LEUMI']);
+const CREDIT_INSTITUTIONS = new Set(['ISRACARD', 'LEUMI_CARD']);
 
 export interface PeriodDefinition {
   key: string;
@@ -26,6 +28,14 @@ export function getCurrentBillingCycleStart(referenceDate: Dayjs) {
   return referenceDate.date() >= BILLING_CUTOFF_DAY
     ? currentMonthCutoff
     : currentMonthCutoff.subtract(1, 'month');
+}
+
+export function isBankInstitution(institution?: string | null) {
+  return !!institution && BANK_INSTITUTIONS.has(institution);
+}
+
+export function isCreditInstitution(institution?: string | null) {
+  return !!institution && CREDIT_INSTITUTIONS.has(institution);
 }
 
 export function getPeriodStart(date: Dayjs, mode: PeriodMode): Dayjs {

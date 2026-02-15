@@ -36,13 +36,25 @@ export function MonthlySummaryView({ months, categoryBreakdowns, categoryOptions
   const labels = buildPeriodLabels(periodMode);
 
   const monthsWithData = useMemo(() => months.filter((m) => m.transactionCount > 0), [months]);
-  const avgIncome = useMemo(
-    () => (monthsWithData.length > 0 ? monthsWithData.reduce((sum, m) => sum + m.income, 0) / monthsWithData.length : 0),
+  const completeMonthsWithData = useMemo(
+    () => monthsWithData.filter((month) => month.isDataComplete),
     [monthsWithData]
   );
+  const monthsUsedForAverages = completeMonthsWithData.length > 0 ? completeMonthsWithData : monthsWithData;
+  const incompleteMonthsWithData = monthsWithData.length - completeMonthsWithData.length;
+  const avgIncome = useMemo(
+    () =>
+      monthsUsedForAverages.length > 0
+        ? monthsUsedForAverages.reduce((sum, month) => sum + month.income, 0) / monthsUsedForAverages.length
+        : 0,
+    [monthsUsedForAverages]
+  );
   const avgExpense = useMemo(
-    () => (monthsWithData.length > 0 ? monthsWithData.reduce((sum, m) => sum + m.expense, 0) / monthsWithData.length : 0),
-    [monthsWithData]
+    () =>
+      monthsUsedForAverages.length > 0
+        ? monthsUsedForAverages.reduce((sum, month) => sum + month.expense, 0) / monthsUsedForAverages.length
+        : 0,
+    [monthsUsedForAverages]
   );
   const avgBalance = avgIncome - avgExpense;
 
@@ -80,6 +92,10 @@ export function MonthlySummaryView({ months, categoryBreakdowns, categoryOptions
     <div className="space-y-6">
       <div className="text-sm text-gray-500">
         מוצג לפי {labels.short}. ניתן לשנות ב״הגדרות״.
+      </div>
+      <div className="text-xs text-gray-500">
+        ממוצעים מחושבים לפי {monthsUsedForAverages.length} תקופות מלאות.
+        {incompleteMonthsWithData > 0 && ` ${incompleteMonthsWithData} תקופות עם נתונים חלקיים לא נכללו בממוצע.`}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

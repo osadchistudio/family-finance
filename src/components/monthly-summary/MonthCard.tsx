@@ -11,6 +11,10 @@ export interface MonthSummaryData {
   periodStart: string; // YYYY-MM-DD
   periodEnd: string; // YYYY-MM-DD
   isCurrentPeriod: boolean;
+  isDataComplete: boolean;
+  missingSources: string[];
+  hasBankActivity: boolean;
+  hasCreditActivity: boolean;
   income: number;
   expense: number;
   balance: number;
@@ -81,6 +85,14 @@ export function MonthCard({ data, onClick }: MonthCardProps) {
         <Receipt className="h-3.5 w-3.5" />
         <span className="text-xs">{data.transactionCount} תנועות</span>
       </div>
+
+      {!data.isDataComplete && data.missingSources.length > 0 && (
+        <div className="mb-3">
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 px-2 py-1 text-xs">
+            ⚠️ חסר: {data.missingSources.join(', ')}
+          </span>
+        </div>
+      )}
 
       {/* Top categories */}
       {data.topCategories.length > 0 && (

@@ -61,7 +61,14 @@ export function CategoryExpenseTrendChart({
       }),
     [sortedMonths, fromMonthKey, toMonthKey]
   );
-  const monthsCount = Math.max(filteredMonths.length, 1);
+  const averageBaseMonths = useMemo(() => {
+    const withData = filteredMonths.filter((month) => month.transactionCount > 0);
+    const completeWithData = withData.filter((month) => month.isDataComplete);
+    if (completeWithData.length > 0) return completeWithData;
+    if (withData.length > 0) return withData;
+    return filteredMonths;
+  }, [filteredMonths]);
+  const monthsCount = Math.max(averageBaseMonths.length, 1);
 
   const keyByCategoryId = useMemo(
     () => Object.fromEntries(categoryOptions.map((category) => [category.id, `cat_${category.id}`])),
@@ -102,7 +109,7 @@ export function CategoryExpenseTrendChart({
   const categoryAverageById = useMemo(() => {
     const totals = new Map<string, number>();
 
-    for (const month of filteredMonths) {
+    for (const month of averageBaseMonths) {
       const monthCategories = categoryBreakdowns[month.monthKey] || [];
       for (const category of monthCategories) {
         totals.set(category.id, (totals.get(category.id) || 0) + category.value);
@@ -112,7 +119,7 @@ export function CategoryExpenseTrendChart({
     return Object.fromEntries(
       categoryOptions.map((category) => [category.id, (totals.get(category.id) || 0) / monthsCount])
     );
-  }, [filteredMonths, categoryBreakdowns, categoryOptions, monthsCount]);
+  }, [averageBaseMonths, categoryBreakdowns, categoryOptions, monthsCount]);
 
   const categoryAverages = useMemo(() => {
     if (selectedCategories.length === 0) return [];
@@ -129,8 +136,8 @@ export function CategoryExpenseTrendChart({
   }, [selectedCategories, categoryAverageById]);
 
   const totalExpenseAverage = useMemo(
-    () => filteredMonths.reduce((sum, month) => sum + month.expense, 0) / monthsCount,
-    [filteredMonths, monthsCount]
+    () => averageBaseMonths.reduce((sum, month) => sum + month.expense, 0) / monthsCount,
+    [averageBaseMonths, monthsCount]
   );
 
   const selectedCategoriesAverage = useMemo(

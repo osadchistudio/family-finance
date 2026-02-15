@@ -1,11 +1,16 @@
 'use client';
 
-import { formatCurrency, getHebrewMonthName } from '@/lib/formatters';
+import { formatCurrency } from '@/lib/formatters';
 import { TrendingUp, TrendingDown, Receipt } from 'lucide-react';
-import dayjs from 'dayjs';
 
 export interface MonthSummaryData {
   monthKey: string; // YYYY-MM
+  label: string;
+  subLabel: string;
+  chartLabel: string;
+  periodStart: string; // YYYY-MM-DD
+  periodEnd: string; // YYYY-MM-DD
+  isCurrentPeriod: boolean;
   income: number;
   expense: number;
   balance: number;
@@ -15,29 +20,24 @@ export interface MonthSummaryData {
 
 interface MonthCardProps {
   data: MonthSummaryData;
-  isCurrentMonth: boolean;
   onClick: (monthKey: string) => void;
 }
 
-export function MonthCard({ data, isCurrentMonth, onClick }: MonthCardProps) {
-  const date = dayjs(data.monthKey + '-01');
-  const monthName = getHebrewMonthName(date.month());
-  const year = date.year();
-
+export function MonthCard({ data, onClick }: MonthCardProps) {
   return (
     <button
       onClick={() => onClick(data.monthKey)}
       className={`w-full text-right bg-white rounded-xl shadow-sm p-5 transition-all hover:shadow-md hover:scale-[1.02] cursor-pointer ${
-        isCurrentMonth ? 'ring-2 ring-blue-500 border-blue-200' : 'border border-gray-100'
+        data.isCurrentPeriod ? 'ring-2 ring-blue-500 border-blue-200' : 'border border-gray-100'
       }`}
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-bold text-gray-900">{monthName}</h3>
-          <p className="text-sm text-gray-500">{year}</p>
+          <h3 className="text-lg font-bold text-gray-900">{data.label}</h3>
+          <p className="text-sm text-gray-500">{data.subLabel}</p>
         </div>
-        {isCurrentMonth && (
+        {data.isCurrentPeriod && (
           <span className="px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 rounded-full">
             חודש נוכחי
           </span>

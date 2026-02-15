@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { formatCurrency, getHebrewMonthName } from '@/lib/formatters';
-import dayjs from 'dayjs';
+import { formatCurrency } from '@/lib/formatters';
 import { MonthSummaryData } from './MonthCard';
 
 interface CategoryBreakdownItem {
@@ -49,10 +48,7 @@ export function CategoryExpenseTrendChart({
   const monthLabelByKey = useMemo(
     () =>
       Object.fromEntries(
-        sortedMonths.map((month) => {
-          const date = dayjs(`${month.monthKey}-01`);
-          return [month.monthKey, `${getHebrewMonthName(date.month())} ${date.year()}`];
-        })
+        sortedMonths.map((month) => [month.monthKey, `${month.label} ${month.subLabel}`.trim()])
       ),
     [sortedMonths]
   );
@@ -88,9 +84,8 @@ export function CategoryExpenseTrendChart({
 
   const trendData = useMemo(() => {
     return filteredMonths.map((month) => {
-        const date = dayjs(`${month.monthKey}-01`);
         const row: Record<string, number | string> = {
-          monthHebrew: getHebrewMonthName(date.month()),
+          monthHebrew: month.chartLabel,
           totalExpense: month.expense,
         };
 

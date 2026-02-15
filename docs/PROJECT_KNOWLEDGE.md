@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-02-14
+Last updated: 2026-02-15
 
 ## Stack
 - Next.js 16.1.6 (App Router, standalone output)
@@ -24,6 +24,37 @@ Last updated: 2026-02-14
 - `/prisma.config.ts` (required so Prisma 7 resolves schema path)
 
 ## Behavior updates
+
+### 2026-02-15 - Monthly summary supports cycle mode toggle (calendar 1-1 vs billing cycle 10-10)
+Why:
+- Cash-flow analysis needs to support both standard calendar months and real billing cycles where credit-card reset is on day 10.
+- Users needed comparable averages/graphs/cards under each mode without leaving the page.
+
+What changed:
+- Added toggle in monthly summary UI:
+  - `חודש קלנדרי (1-1)`
+  - `מחזור חיוב (10-10)`
+- Server-side aggregation now prepares two datasets from the same transactions:
+  - calendar monthly periods,
+  - billing-cycle periods (10th through 9th).
+- Mode switch updates the full monthly summary section consistently:
+  - top average cards,
+  - income/expense trend chart,
+  - category trend + category averages,
+  - month/cycle cards,
+  - month detail transaction fetch range.
+- Month/cycle cards and detail now use explicit `periodStart`/`periodEnd` instead of assuming calendar boundaries.
+
+Files touched:
+- `/src/app/monthly-summary/page.tsx`
+- `/src/components/monthly-summary/MonthlySummaryView.tsx`
+- `/src/components/monthly-summary/MonthCard.tsx`
+- `/src/components/monthly-summary/MonthDetail.tsx`
+- `/src/components/monthly-summary/CategoryExpenseTrendChart.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
 
 ### 2026-02-14 - Monthly summary category trend now supports custom month range (from-to)
 Why:

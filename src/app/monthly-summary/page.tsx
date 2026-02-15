@@ -1,7 +1,11 @@
 import { prisma } from '@/lib/prisma';
+import { getHebrewMonthName } from '@/lib/formatters';
 import { MonthlySummaryView } from '@/components/monthly-summary/MonthlySummaryView';
-import dayjs from 'dayjs';
+import dayjs, { Dayjs } from 'dayjs';
 import { Decimal } from 'decimal.js';
+import { Prisma } from '@prisma/client';
+
+type PeriodMode = 'calendar' | 'billing';
 
 interface MonthAggregate {
   income: Decimal;
@@ -15,27 +19,101 @@ interface MonthAggregate {
   }>;
 }
 
-async function getMonthlySummaryData() {
-  // Fetch last 12 months of transactions
-  const startDate = dayjs().subtract(11, 'month').startOf('month').toDate();
-  const endDate = dayjs().endOf('month').toDate();
+interface PeriodDefinition {
+  key: string;
+  label: string;
+  subLabel: string;
+  chartLabel: string;
+  startDate: Dayjs;
+  endDate: Dayjs;
+  isCurrent: boolean;
+}
 
-  const transactions = await prisma.transaction.findMany({
-    where: {
-      date: { gte: startDate, lte: endDate },
-      isExcluded: false,
-    },
-    include: { category: true },
-    orderBy: { date: 'desc' },
-  });
+interface MonthlyDataset {
+  months: {
+    monthKey: string;
+    label: string;
+    subLabel: string;
+    chartLabel: string;
+    periodStart: string;
+    periodEnd: string;
+    isCurrentPeriod: boolean;
+    income: number;
+    expense: number;
+    balance: number;
+    transactionCount: number;
+    topCategories: { name: string; icon: string; color: string; total: number }[];
+  }[];
+  categoryBreakdowns: Record<string, { id: string; name: string; value: number; color: string; icon: string }[]>;
+  categoryOptions: { id: string; name: string; icon: string; color: string }[];
+}
 
-  // Group by YYYY-MM
+type TransactionWithCategory = Prisma.TransactionGetPayload<{ include: { category: true } }>;
+
+function getCurrentBillingCycleStart(referenceDate: Dayjs) {
+  const cutoffDay = 10;
+  const currentMonthCutoff = referenceDate.startOf('month').date(cutoffDay);
+  return referenceDate.date() >= cutoffDay
+    ? currentMonthCutoff
+    : currentMonthCutoff.subtract(1, 'month');
+}
+
+function buildPeriods(mode: PeriodMode, now: Dayjs, count = 12): PeriodDefinition[] {
+  const periods: PeriodDefinition[] = [];
+
+  if (mode === 'calendar') {
+    for (let i = count - 1; i >= 0; i--) {
+      const startDate = now.subtract(i, 'month').startOf('month');
+      const endDate = startDate.endOf('month');
+      periods.push({
+        key: startDate.format('YYYY-MM'),
+        label: getHebrewMonthName(startDate.month()),
+        subLabel: String(startDate.year()),
+        chartLabel: getHebrewMonthName(startDate.month()),
+        startDate,
+        endDate,
+        isCurrent: i === 0,
+      });
+    }
+    return periods;
+  }
+
+  const currentCycleStart = getCurrentBillingCycleStart(now);
+  for (let i = count - 1; i >= 0; i--) {
+    const startDate = currentCycleStart.subtract(i, 'month');
+    const endDate = startDate.add(1, 'month').subtract(1, 'day');
+    periods.push({
+      key: startDate.format('YYYY-MM'),
+      label: getHebrewMonthName(startDate.month()),
+      subLabel: `${startDate.format('DD/MM')} - ${endDate.format('DD/MM/YYYY')}`,
+      chartLabel: getHebrewMonthName(startDate.month()),
+      startDate,
+      endDate,
+      isCurrent: i === 0,
+    });
+  }
+
+  return periods;
+}
+
+function getPeriodKey(txDate: Dayjs, mode: PeriodMode): string {
+  if (mode === 'calendar') return txDate.format('YYYY-MM');
+
+  const cutoffDay = 10;
+  const cycleStart = txDate.date() >= cutoffDay
+    ? txDate.startOf('month').date(cutoffDay)
+    : txDate.subtract(1, 'month').startOf('month').date(cutoffDay);
+  return cycleStart.format('YYYY-MM');
+}
+
+function buildDataset(
+  transactions: TransactionWithCategory[],
+  mode: PeriodMode,
+  periods: PeriodDefinition[]
+): MonthlyDataset {
   const monthMap: Record<string, MonthAggregate> = {};
-
-  // Initialize all 12 months (even empty ones)
-  for (let i = 11; i >= 0; i--) {
-    const key = dayjs().subtract(i, 'month').format('YYYY-MM');
-    monthMap[key] = {
+  for (const period of periods) {
+    monthMap[period.key] = {
       income: new Decimal(0),
       expense: new Decimal(0),
       transactionCount: 0,
@@ -43,51 +121,55 @@ async function getMonthlySummaryData() {
     };
   }
 
-  // Aggregate
   for (const tx of transactions) {
-    const monthKey = dayjs(tx.date).format('YYYY-MM');
-    if (!monthMap[monthKey]) continue;
+    const periodKey = getPeriodKey(dayjs(tx.date), mode);
+    if (!monthMap[periodKey]) continue;
 
     const amount = new Decimal(tx.amount.toString());
-    monthMap[monthKey].transactionCount++;
+    monthMap[periodKey].transactionCount++;
 
     if (amount.greaterThan(0)) {
-      monthMap[monthKey].income = monthMap[monthKey].income.plus(amount);
+      monthMap[periodKey].income = monthMap[periodKey].income.plus(amount);
     } else {
-      monthMap[monthKey].expense = monthMap[monthKey].expense.plus(amount.abs());
+      monthMap[periodKey].expense = monthMap[periodKey].expense.plus(amount.abs());
     }
 
-    // Category breakdown (expenses only)
     if (tx.category && amount.lessThan(0)) {
       const catId = tx.category.id;
-      if (!monthMap[monthKey].categories[catId]) {
-        monthMap[monthKey].categories[catId] = {
+      if (!monthMap[periodKey].categories[catId]) {
+        monthMap[periodKey].categories[catId] = {
           name: tx.category.name,
           icon: tx.category.icon || '',
           color: tx.category.color || '#888888',
           total: new Decimal(0),
         };
       }
-      monthMap[monthKey].categories[catId].total = monthMap[monthKey].categories[catId].total.plus(amount.abs());
+      monthMap[periodKey].categories[catId].total = monthMap[periodKey].categories[catId].total.plus(amount.abs());
     }
   }
 
-  // Convert to serializable format
-  const months = Object.entries(monthMap)
-    .sort(([a], [b]) => b.localeCompare(a)) // newest first for the grid
-    .map(([monthKey, agg]) => {
+  const months = [...periods]
+    .reverse()
+    .map((period) => {
+      const agg = monthMap[period.key];
       const topCategories = Object.values(agg.categories)
-        .map(c => ({
-          name: c.name,
-          icon: c.icon,
-          color: c.color,
-          total: c.total.toNumber(),
+        .map((category) => ({
+          name: category.name,
+          icon: category.icon,
+          color: category.color,
+          total: category.total.toNumber(),
         }))
         .sort((a, b) => b.total - a.total)
         .slice(0, 5);
 
       return {
-        monthKey,
+        monthKey: period.key,
+        label: period.label,
+        subLabel: period.subLabel,
+        chartLabel: period.chartLabel,
+        periodStart: period.startDate.format('YYYY-MM-DD'),
+        periodEnd: period.endDate.format('YYYY-MM-DD'),
+        isCurrentPeriod: period.isCurrent,
         income: agg.income.toNumber(),
         expense: agg.expense.toNumber(),
         balance: agg.income.minus(agg.expense).toNumber(),
@@ -96,18 +178,18 @@ async function getMonthlySummaryData() {
       };
     });
 
-  // Category breakdowns per month (for drill-down and category trend filtering)
   const categoryBreakdowns: Record<string, { id: string; name: string; value: number; color: string; icon: string }[]> = {};
   const categoryOptionsMap: Record<string, { id: string; name: string; icon: string; color: string }> = {};
 
-  for (const [monthKey, agg] of Object.entries(monthMap)) {
-    categoryBreakdowns[monthKey] = Object.entries(agg.categories)
-      .map(([categoryId, c]) => ({
+  for (const period of periods) {
+    const agg = monthMap[period.key];
+    categoryBreakdowns[period.key] = Object.entries(agg.categories)
+      .map(([categoryId, category]) => ({
         id: categoryId,
-        name: c.name,
-        value: c.total.toNumber(),
-        color: c.color,
-        icon: c.icon,
+        name: category.name,
+        value: category.total.toNumber(),
+        color: category.color,
+        icon: category.icon,
       }))
       .sort((a, b) => b.value - a.value);
 
@@ -123,26 +205,48 @@ async function getMonthlySummaryData() {
     }
   }
 
-  const categoryOptions = Object.values(categoryOptionsMap)
-    .sort((a, b) => a.name.localeCompare(b.name, 'he'));
+  const categoryOptions = Object.values(categoryOptionsMap).sort((a, b) => a.name.localeCompare(b.name, 'he'));
 
   return { months, categoryBreakdowns, categoryOptions };
 }
 
+async function getMonthlySummaryData() {
+  const now = dayjs();
+  const calendarPeriods = buildPeriods('calendar', now);
+  const billingPeriods = buildPeriods('billing', now);
+
+  const allPeriods = [...calendarPeriods, ...billingPeriods];
+  const minStart = allPeriods.reduce((min, period) => (period.startDate.isBefore(min) ? period.startDate : min), allPeriods[0].startDate);
+  const maxEnd = allPeriods.reduce((max, period) => (period.endDate.isAfter(max) ? period.endDate : max), allPeriods[0].endDate);
+
+  const transactions = await prisma.transaction.findMany({
+    where: {
+      date: { gte: minStart.startOf('day').toDate(), lte: maxEnd.endOf('day').toDate() },
+      isExcluded: false,
+    },
+    include: { category: true },
+    orderBy: { date: 'desc' },
+  });
+
+  const calendar = buildDataset(transactions, 'calendar', calendarPeriods);
+  const billing = buildDataset(transactions, 'billing', billingPeriods);
+
+  return { calendar, billing };
+}
+
 export default async function MonthlySummaryPage() {
-  const { months, categoryBreakdowns, categoryOptions } = await getMonthlySummaryData();
+  const { calendar, billing } = await getMonthlySummaryData();
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">סיכום חודשי</h1>
-        <p className="text-gray-600 mt-1">מעקב תזרים מזומנים לפי חודשים</p>
+        <p className="text-gray-600 mt-1">מעקב תזרים מזומנים לפי חודשים או מחזור חיוב</p>
       </div>
 
       <MonthlySummaryView
-        months={months}
-        categoryBreakdowns={categoryBreakdowns}
-        categoryOptions={categoryOptions}
+        calendar={calendar}
+        billing={billing}
       />
     </div>
   );

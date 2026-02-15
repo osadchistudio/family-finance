@@ -1,13 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MonthCard, MonthSummaryData } from './MonthCard';
 import { MonthDetail } from './MonthDetail';
 import { SummaryCard } from '@/components/dashboard/SummaryCard';
 import { ExpenseChart } from '@/components/dashboard/ExpenseChart';
 import { CategoryExpenseTrendChart } from './CategoryExpenseTrendChart';
-import { getHebrewMonthName } from '@/lib/formatters';
-import dayjs from 'dayjs';
 
 interface CategoryBreakdownItem {
   id: string;
@@ -25,44 +23,65 @@ interface CategoryOption {
 }
 
 interface MonthlySummaryViewProps {
-  months: MonthSummaryData[];
-  categoryBreakdowns: Record<string, CategoryBreakdownItem[]>;
-  categoryOptions: CategoryOption[];
+  calendar: {
+    months: MonthSummaryData[];
+    categoryBreakdowns: Record<string, CategoryBreakdownItem[]>;
+    categoryOptions: CategoryOption[];
+  };
+  billing: {
+    months: MonthSummaryData[];
+    categoryBreakdowns: Record<string, CategoryBreakdownItem[]>;
+    categoryOptions: CategoryOption[];
+  };
 }
 
-export function MonthlySummaryView({ months, categoryBreakdowns, categoryOptions }: MonthlySummaryViewProps) {
+type PeriodMode = 'calendar' | 'billing';
+
+export function MonthlySummaryView({ calendar, billing }: MonthlySummaryViewProps) {
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('calendar');
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
 
-  const currentMonthKey = dayjs().format('YYYY-MM');
+  const activeData = periodMode === 'calendar' ? calendar : billing;
+  const months = activeData.months;
+  const categoryBreakdowns = activeData.categoryBreakdowns;
+  const categoryOptions = activeData.categoryOptions;
 
-  // Calculate averages across all months with data
-  const monthsWithData = months.filter(m => m.transactionCount > 0);
-  const avgIncome = monthsWithData.length > 0
-    ? monthsWithData.reduce((sum, m) => sum + m.income, 0) / monthsWithData.length
-    : 0;
-  const avgExpense = monthsWithData.length > 0
-    ? monthsWithData.reduce((sum, m) => sum + m.expense, 0) / monthsWithData.length
-    : 0;
+  useEffect(() => {
+    setSelectedMonth(null);
+    setSelectedCategoryIds([]);
+  }, [periodMode]);
+
+  // Calculate averages across all periods with data
+  const monthsWithData = useMemo(() => months.filter((m) => m.transactionCount > 0), [months]);
+  const avgIncome = useMemo(
+    () => (monthsWithData.length > 0 ? monthsWithData.reduce((sum, m) => sum + m.income, 0) / monthsWithData.length : 0),
+    [monthsWithData]
+  );
+  const avgExpense = useMemo(
+    () => (monthsWithData.length > 0 ? monthsWithData.reduce((sum, m) => sum + m.expense, 0) / monthsWithData.length : 0),
+    [monthsWithData]
+  );
   const avgBalance = avgIncome - avgExpense;
 
   // Prepare chart data — sorted chronologically
-  const chartData = [...months]
-    .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
-    .map(m => {
-      const d = dayjs(m.monthKey + '-01');
-      return {
-        month: d.format('MM/YYYY'),
-        monthHebrew: getHebrewMonthName(d.month()),
-        income: m.income,
-        expense: m.expense,
-        balance: m.balance
-      };
-    });
+  const chartData = useMemo(
+    () =>
+      [...months]
+        .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+        .map((m) => ({
+          month: m.monthKey,
+          monthHebrew: m.chartLabel,
+          income: m.income,
+          expense: m.expense,
+          balance: m.balance,
+        })),
+    [months]
+  );
 
   // Detail mode
   if (selectedMonth) {
-    const monthData = months.find(m => m.monthKey === selectedMonth);
+    const monthData = months.find((m) => m.monthKey === selectedMonth);
     if (!monthData) {
       setSelectedMonth(null);
       return null;
@@ -80,6 +99,27 @@ export function MonthlySummaryView({ months, categoryBreakdowns, categoryOptions
   // Overview mode
   return (
     <div className="space-y-6">
+      <div className="inline-flex items-center rounded-xl border border-gray-200 bg-white p-1 gap-1">
+        <button
+          type="button"
+          onClick={() => setPeriodMode('calendar')}
+          className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+            periodMode === 'calendar' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          חודש קלנדרי (1-1)
+        </button>
+        <button
+          type="button"
+          onClick={() => setPeriodMode('billing')}
+          className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+            periodMode === 'billing' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          מחזור חיוב (10-10)
+        </button>
+      </div>
+
       {/* Average summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <SummaryCard title="ממוצע הכנסות חודשי" value={avgIncome} type="income" />
@@ -99,13 +139,14 @@ export function MonthlySummaryView({ months, categoryBreakdowns, categoryOptions
 
       {/* Month cards grid */}
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">סיכום לפי חודשים</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          {periodMode === 'calendar' ? 'סיכום לפי חודשים' : 'סיכום לפי מחזורי חיוב'}
+        </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {months.map(month => (
+          {months.map((month) => (
             <MonthCard
               key={month.monthKey}
               data={month}
-              isCurrentMonth={month.monthKey === currentMonthKey}
               onClick={setSelectedMonth}
             />
           ))}

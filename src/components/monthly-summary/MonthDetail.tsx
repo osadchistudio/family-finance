@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { SummaryCard } from '@/components/dashboard/SummaryCard';
 import { CategoryPieChart } from '@/components/dashboard/CategoryPieChart';
-import { formatCurrency, formatDate, getHebrewMonthName } from '@/lib/formatters';
+import { formatCurrency, formatDate } from '@/lib/formatters';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { MonthSummaryData } from './MonthCard';
@@ -28,11 +28,9 @@ export function MonthDetail({ data, categoryBreakdown, onBack }: MonthDetailProp
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
 
-  const date = dayjs(data.monthKey + '-01');
-  const monthName = getHebrewMonthName(date.month());
-  const year = date.year();
-  const startDate = date.startOf('month').format('YYYY-MM-DD');
-  const endDate = date.endOf('month').format('YYYY-MM-DD');
+  const startDate = data.periodStart;
+  const endDate = data.periodEnd;
+  const periodDisplay = `${dayjs(startDate).format('DD/MM/YYYY')} - ${dayjs(endDate).format('DD/MM/YYYY')}`;
 
   useEffect(() => {
     async function fetchTransactions() {
@@ -89,9 +87,9 @@ export function MonthDetail({ data, categoryBreakdown, onBack }: MonthDetailProp
         </button>
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            {monthName} {year}
+            {data.label}
           </h2>
-          <p className="text-gray-500 text-sm">{data.transactionCount} תנועות</p>
+          <p className="text-gray-500 text-sm">{data.subLabel} · {periodDisplay} · {data.transactionCount} תנועות</p>
         </div>
       </div>
 

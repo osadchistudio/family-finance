@@ -38,13 +38,34 @@ export function CategoryExpenseTrendChart({
 }: CategoryExpenseTrendChartProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [showLimitMessage, setShowLimitMessage] = useState(false);
+  const [fromMonthKey, setFromMonthKey] = useState('');
+  const [toMonthKey, setToMonthKey] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const selectedCategories = categoryOptions.filter((category) => selectedCategoryIds.includes(category.id));
   const sortedMonths = useMemo(
     () => [...months].sort((a, b) => a.monthKey.localeCompare(b.monthKey)),
     [months]
   );
-  const monthsCount = Math.max(sortedMonths.length, 1);
+  const monthLabelByKey = useMemo(
+    () =>
+      Object.fromEntries(
+        sortedMonths.map((month) => {
+          const date = dayjs(`${month.monthKey}-01`);
+          return [month.monthKey, `${getHebrewMonthName(date.month())} ${date.year()}`];
+        })
+      ),
+    [sortedMonths]
+  );
+  const filteredMonths = useMemo(
+    () =>
+      sortedMonths.filter((month) => {
+        if (fromMonthKey && month.monthKey < fromMonthKey) return false;
+        if (toMonthKey && month.monthKey > toMonthKey) return false;
+        return true;
+      }),
+    [sortedMonths, fromMonthKey, toMonthKey]
+  );
+  const monthsCount = Math.max(filteredMonths.length, 1);
 
   const keyByCategoryId = useMemo(
     () => Object.fromEntries(categoryOptions.map((category) => [category.id, `cat_${category.id}`])),
@@ -66,7 +87,7 @@ export function CategoryExpenseTrendChart({
   }, [categoryOptions, keyByCategoryId]);
 
   const trendData = useMemo(() => {
-    return sortedMonths.map((month) => {
+    return filteredMonths.map((month) => {
         const date = dayjs(`${month.monthKey}-01`);
         const row: Record<string, number | string> = {
           monthHebrew: getHebrewMonthName(date.month()),
@@ -81,12 +102,12 @@ export function CategoryExpenseTrendChart({
 
         return row;
       });
-  }, [sortedMonths, categoryBreakdowns, selectedCategoryIds, keyByCategoryId]);
+  }, [filteredMonths, categoryBreakdowns, selectedCategoryIds, keyByCategoryId]);
 
   const categoryAverageById = useMemo(() => {
     const totals = new Map<string, number>();
 
-    for (const month of sortedMonths) {
+    for (const month of filteredMonths) {
       const monthCategories = categoryBreakdowns[month.monthKey] || [];
       for (const category of monthCategories) {
         totals.set(category.id, (totals.get(category.id) || 0) + category.value);
@@ -96,7 +117,7 @@ export function CategoryExpenseTrendChart({
     return Object.fromEntries(
       categoryOptions.map((category) => [category.id, (totals.get(category.id) || 0) / monthsCount])
     );
-  }, [sortedMonths, categoryBreakdowns, categoryOptions, monthsCount]);
+  }, [filteredMonths, categoryBreakdowns, categoryOptions, monthsCount]);
 
   const categoryAverages = useMemo(() => {
     if (selectedCategories.length === 0) return [];
@@ -113,8 +134,8 @@ export function CategoryExpenseTrendChart({
   }, [selectedCategories, categoryAverageById]);
 
   const totalExpenseAverage = useMemo(
-    () => sortedMonths.reduce((sum, month) => sum + month.expense, 0) / monthsCount,
-    [sortedMonths, monthsCount]
+    () => filteredMonths.reduce((sum, month) => sum + month.expense, 0) / monthsCount,
+    [filteredMonths, monthsCount]
   );
 
   const selectedCategoriesAverage = useMemo(
@@ -130,6 +151,13 @@ export function CategoryExpenseTrendChart({
     }
     return `${selectedCategories.length} קטגוריות נבחרו`;
   }, [selectedCategories]);
+  const rangeLabel = useMemo(() => {
+    if (!fromMonthKey && !toMonthKey) return 'כל התקופה';
+
+    const fromLabel = fromMonthKey ? monthLabelByKey[fromMonthKey] || fromMonthKey : 'ההתחלה';
+    const toLabel = toMonthKey ? monthLabelByKey[toMonthKey] || toMonthKey : 'היום';
+    return `${fromLabel} - ${toLabel}`;
+  }, [fromMonthKey, toMonthKey, monthLabelByKey]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -159,6 +187,20 @@ export function CategoryExpenseTrendChart({
     onCategoryChange([...selectedCategoryIds, categoryId]);
   };
 
+  const handleFromMonthChange = (value: string) => {
+    if (value && toMonthKey && value > toMonthKey) {
+      setToMonthKey(value);
+    }
+    setFromMonthKey(value);
+  };
+
+  const handleToMonthChange = (value: string) => {
+    if (value && fromMonthKey && value < fromMonthKey) {
+      setFromMonthKey(value);
+    }
+    setToMonthKey(value);
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm p-6">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
@@ -166,6 +208,45 @@ export function CategoryExpenseTrendChart({
       </div>
 
       <div className="mb-4 space-y-2">
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <select
+            value={fromMonthKey}
+            onChange={(event) => handleFromMonthChange(event.target.value)}
+            className="w-full sm:w-[190px] px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">מההתחלה</option>
+            {sortedMonths.map((month) => (
+              <option key={`from-${month.monthKey}`} value={month.monthKey}>
+                {monthLabelByKey[month.monthKey]}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={toMonthKey}
+            onChange={(event) => handleToMonthChange(event.target.value)}
+            className="w-full sm:w-[190px] px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">עד היום</option>
+            {sortedMonths.map((month) => (
+              <option key={`to-${month.monthKey}`} value={month.monthKey}>
+                {monthLabelByKey[month.monthKey]}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={() => {
+              setFromMonthKey('');
+              setToMonthKey('');
+            }}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 self-start"
+          >
+            כל התקופה
+          </button>
+        </div>
+
         <div className="relative w-full sm:w-[340px]" ref={dropdownRef}>
           <button
             type="button"
@@ -234,8 +315,8 @@ export function CategoryExpenseTrendChart({
 
         <p className="text-sm text-gray-600">
           {selectedCategoryIds.length === 0
-            ? `ממוצע חודשי לכל החודשים (סה״כ הוצאות): ${formatCurrency(totalExpenseAverage)}`
-            : `ממוצע חודשי לכל החודשים בקטגוריות שנבחרו: ${formatCurrency(selectedCategoriesAverage)}`}
+            ? `ממוצע חודשי לטווח ${rangeLabel} (סה״כ הוצאות): ${formatCurrency(totalExpenseAverage)}`
+            : `ממוצע חודשי לטווח ${rangeLabel} בקטגוריות שנבחרו: ${formatCurrency(selectedCategoriesAverage)}`}
         </p>
       </div>
 

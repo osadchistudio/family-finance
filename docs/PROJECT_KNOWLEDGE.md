@@ -25,6 +25,26 @@ Last updated: 2026-02-14
 
 ## Behavior updates
 
+### 2026-02-14 - Monthly summary category trend now supports custom month range (from-to)
+Why:
+- Needed to calculate and inspect category trends and averages for a chosen period (for example from August until current period), not only the full history.
+
+What changed:
+- Added month range controls (`מההתחלה` / `עד היום`) to category trend section in monthly summary.
+- Default remains full period (all available months).
+- Added quick reset button (`כל התקופה`) for range.
+- Range filter now applies consistently to:
+  - category trend graph data,
+  - total monthly average text in section,
+  - selected-categories monthly averages and per-category average cards.
+
+Files touched:
+- `/src/components/monthly-summary/CategoryExpenseTrendChart.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-14 - Monthly summary category trend switched to dropdown multi-select + explicit all-months average context
 Why:
 - Category selection UI needed to be a dropdown multi-select (instead of always-open checkbox list) for cleaner UX.

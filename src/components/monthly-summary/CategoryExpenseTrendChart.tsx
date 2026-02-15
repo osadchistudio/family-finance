@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { formatCurrency, getHebrewMonthName } from '@/lib/formatters';
 import dayjs from 'dayjs';
@@ -36,8 +36,15 @@ export function CategoryExpenseTrendChart({
   categoryOptions,
   onCategoryChange,
 }: CategoryExpenseTrendChartProps) {
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [showLimitMessage, setShowLimitMessage] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const selectedCategories = categoryOptions.filter((category) => selectedCategoryIds.includes(category.id));
+  const sortedMonths = useMemo(
+    () => [...months].sort((a, b) => a.monthKey.localeCompare(b.monthKey)),
+    [months]
+  );
+  const monthsCount = Math.max(sortedMonths.length, 1);
 
   const keyByCategoryId = useMemo(
     () => Object.fromEntries(categoryOptions.map((category) => [category.id, `cat_${category.id}`])),
@@ -59,9 +66,7 @@ export function CategoryExpenseTrendChart({
   }, [categoryOptions, keyByCategoryId]);
 
   const trendData = useMemo(() => {
-    return [...months]
-      .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
-      .map((month) => {
+    return sortedMonths.map((month) => {
         const date = dayjs(`${month.monthKey}-01`);
         const row: Record<string, number | string> = {
           monthHebrew: getHebrewMonthName(date.month()),
@@ -76,30 +81,72 @@ export function CategoryExpenseTrendChart({
 
         return row;
       });
-  }, [months, categoryBreakdowns, selectedCategoryIds, keyByCategoryId]);
+  }, [sortedMonths, categoryBreakdowns, selectedCategoryIds, keyByCategoryId]);
+
+  const categoryAverageById = useMemo(() => {
+    const totals = new Map<string, number>();
+
+    for (const month of sortedMonths) {
+      const monthCategories = categoryBreakdowns[month.monthKey] || [];
+      for (const category of monthCategories) {
+        totals.set(category.id, (totals.get(category.id) || 0) + category.value);
+      }
+    }
+
+    return Object.fromEntries(
+      categoryOptions.map((category) => [category.id, (totals.get(category.id) || 0) / monthsCount])
+    );
+  }, [sortedMonths, categoryBreakdowns, categoryOptions, monthsCount]);
 
   const categoryAverages = useMemo(() => {
-    if (selectedCategories.length === 0 || trendData.length === 0) return [];
+    if (selectedCategories.length === 0) return [];
 
     return selectedCategories.map((category) => {
-      const key = keyByCategoryId[category.id];
-      const total = trendData.reduce((sum, row) => sum + Number(row[key] || 0), 0);
-      const average = total / trendData.length;
       return {
         id: category.id,
         name: category.name,
         icon: category.icon,
         color: category.color,
-        average,
+        average: Number(categoryAverageById[category.id] || 0),
       };
     }).sort((a, b) => b.average - a.average);
-  }, [selectedCategories, trendData, keyByCategoryId]);
+  }, [selectedCategories, categoryAverageById]);
+
+  const totalExpenseAverage = useMemo(
+    () => sortedMonths.reduce((sum, month) => sum + month.expense, 0) / monthsCount,
+    [sortedMonths, monthsCount]
+  );
+
+  const selectedCategoriesAverage = useMemo(
+    () => categoryAverages.reduce((sum, category) => sum + category.average, 0),
+    [categoryAverages]
+  );
+
+  const selectedSummaryLabel = useMemo(() => {
+    if (selectedCategories.length === 0) return 'בחר עד 5 קטגוריות';
+    if (selectedCategories.length === 1) {
+      const category = selectedCategories[0];
+      return `${category.icon} ${category.name}`;
+    }
+    return `${selectedCategories.length} קטגוריות נבחרו`;
+  }, [selectedCategories]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!dropdownRef.current || dropdownRef.current.contains(event.target as Node)) return;
+      setIsDropdownOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const toggleCategory = (categoryId: string) => {
     const isSelected = selectedCategoryIds.includes(categoryId);
 
     if (isSelected) {
       onCategoryChange(selectedCategoryIds.filter((id) => id !== categoryId));
+      setShowLimitMessage(false);
       return;
     }
 
@@ -116,48 +163,80 @@ export function CategoryExpenseTrendChart({
     <div className="bg-white rounded-xl shadow-sm p-6">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
         <h3 className="text-lg font-semibold text-gray-900">מגמת הוצאות לפי קטגוריה</h3>
-        <button
-          type="button"
-          onClick={() => {
-            setShowLimitMessage(false);
-            onCategoryChange([]);
-          }}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 self-start"
-        >
-          הצג סה״כ הוצאות
-        </button>
       </div>
 
-      <div className="mb-4">
-        <p className="text-sm text-gray-500 mb-2">
-          בחר עד 5 קטגוריות להשוואה
-        </p>
-        <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {categoryOptions.map((category) => {
-            const checked = selectedCategoryIds.includes(category.id);
-            return (
-              <label
-                key={category.id}
-                className={`flex items-center gap-2 text-sm px-2 py-1.5 rounded cursor-pointer transition-colors ${
-                  checked ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50 border border-transparent'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggleCategory(category.id)}
-                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="truncate">
-                  {category.icon} {category.name}
-                </span>
-              </label>
-            );
-          })}
+      <div className="mb-4 space-y-2">
+        <div className="relative w-full sm:w-[340px]" ref={dropdownRef}>
+          <button
+            type="button"
+            onClick={() => setIsDropdownOpen((open) => !open)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm flex items-center justify-between gap-2 hover:bg-gray-50"
+          >
+            <span className="truncate">{selectedSummaryLabel}</span>
+            <span className="text-xs text-gray-500">▾</span>
+          </button>
+
+          {isDropdownOpen && (
+            <div className="absolute z-20 mt-2 w-full rounded-lg border border-gray-200 bg-white shadow-lg p-2">
+              <p className="text-xs text-gray-500 px-2 py-1">בחר עד 5 קטגוריות</p>
+              <div className="max-h-56 overflow-y-auto space-y-1">
+                {categoryOptions.map((category) => {
+                  const checked = selectedCategoryIds.includes(category.id);
+                  return (
+                    <label
+                      key={category.id}
+                      className={`flex items-center justify-between gap-2 text-sm px-2 py-2 rounded cursor-pointer transition-colors ${
+                        checked ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50 border border-transparent'
+                      }`}
+                    >
+                      <span className="truncate text-gray-700">
+                        {category.icon} {category.name}
+                      </span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs text-gray-500">{formatCurrency(Number(categoryAverageById[category.id] || 0))}</span>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleCategory(category.id)}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLimitMessage(false);
+                    onCategoryChange([]);
+                    setIsDropdownOpen(false);
+                  }}
+                  className="text-xs text-gray-600 hover:text-gray-900"
+                >
+                  נקה בחירה (סה״כ הוצאות)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsDropdownOpen(false)}
+                  className="text-xs text-blue-600 hover:text-blue-700"
+                >
+                  סגור
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-        {showLimitMessage && (
-          <p className="text-xs text-red-600 mt-2">אפשר לבחור עד 5 קטגוריות במקביל</p>
-        )}
+
+        {showLimitMessage && <p className="text-xs text-red-600">אפשר לבחור עד 5 קטגוריות במקביל</p>}
+
+        <p className="text-sm text-gray-600">
+          {selectedCategoryIds.length === 0
+            ? `ממוצע חודשי לכל החודשים (סה״כ הוצאות): ${formatCurrency(totalExpenseAverage)}`
+            : `ממוצע חודשי לכל החודשים בקטגוריות שנבחרו: ${formatCurrency(selectedCategoriesAverage)}`}
+        </p>
       </div>
 
       <div style={{ height: 256 }}>
@@ -220,7 +299,7 @@ export function CategoryExpenseTrendChart({
 
       {selectedCategoryIds.length > 0 && (
         <div className="mt-4 border-t pt-4">
-          <h4 className="text-sm font-semibold text-gray-900 mb-2">ממוצע הוצאה חודשית לקטגוריה</h4>
+          <h4 className="text-sm font-semibold text-gray-900 mb-2">ממוצע חודשי לכל התקופה לפי קטגוריה</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {categoryAverages.map((category) => (
               <div key={category.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2">

@@ -25,6 +25,26 @@ Last updated: 2026-02-14
 
 ## Behavior updates
 
+### 2026-02-14 - Monthly summary category trend switched to dropdown multi-select + explicit all-months average context
+Why:
+- Category selection UI needed to be a dropdown multi-select (instead of always-open checkbox list) for cleaner UX.
+- Users needed clear visibility that the category section reflects cross-period monthly averages, aligned with top summary cards logic.
+
+What changed:
+- Replaced open checkbox grid with dropdown multi-select (up to 5 categories) in monthly category trend section.
+- Dropdown now shows each category with its monthly average across all months, and supports quick clear/reset to total expenses.
+- Added explicit summary line in the section:
+  - no category selection: average monthly total expense across all months
+  - with selected categories: combined average monthly amount across selected categories.
+- Retained per-selected-category average cards and renamed heading to emphasize full-period average.
+
+Files touched:
+- `/src/components/monthly-summary/CategoryExpenseTrendChart.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+
 ### 2026-02-14 - Dashboard category percentages aligned between top pie summary and lower averages list
 Why:
 - Dashboard showed different percentages for the same category between the upper pie summary card and lower category averages list.

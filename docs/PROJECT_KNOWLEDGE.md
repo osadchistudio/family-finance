@@ -25,6 +25,96 @@ Last updated: 2026-02-21
 
 ## Behavior updates
 
+### 2026-02-21 - Hotfix: restore production build by removing incorrect transaction type annotation
+Why:
+- Production returned `502` after deploy because `next build` failed on `page.tsx` type-check (`tx.category` / `tx.account` were not present on the annotated type).
+- The deploy flow restarts PM2 after build steps, so failed build during rollout can leave upstream unavailable.
+
+What changed:
+- Removed the explicit `TransactionWithRelations` annotation in root `page.tsx`.
+- Kept Prisma include-based inference in `transactions.map(...)`, so `tx` correctly includes `category` and `account` relations.
+- This restores TypeScript compatibility for production build on current Next/TS settings.
+
+Files touched:
+- `/page.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Fix is build-time only; runtime behavior of transactions page is unchanged.
+
+### 2026-02-21 - Manual transaction entry (income/expense) added in Transactions screen
+Why:
+- Some real-world transactions (for example cash/off-ledger payments) do not appear in uploaded bank/credit files.
+- Needed a native way to record those movements directly in the app and include them in analytics.
+
+What changed:
+- Added `POST /api/transactions` endpoint for creating manual transactions.
+- New server-side validation for manual creation:
+  - required: `description`, `amount > 0`, `type` (`income`/`expense`), `date`
+  - optional: `categoryId`, `accountId`, `notes`, `isRecurring`
+  - income/expense category type mismatch is rejected.
+- If no account is provided, transaction is linked to an auto-created fallback account:
+  - name: `ידני / מזומן`
+  - institution: `OTHER`
+  - cardNumber: `MANUAL`
+- Added manual-entry modal in `/transactions` with:
+  - income/expense switch
+  - amount, date, description
+  - optional account/category/notes
+  - optional recurring flag (expense mode only)
+- Added `הוסף ידנית` action button in transactions toolbar.
+- On success, newly created transaction is inserted immediately into UI state without page reload.
+
+Files touched:
+- `/src/app/api/transactions/route.ts`
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Adds new API capability: `POST /api/transactions`.
+
+### 2026-02-21 - Grouped view category changes now persist for the full group
+Why:
+- In `מאוחד` transactions view, changing category could show success toast but not reflect reliably after refresh, because only a representative transaction was being updated.
+
+What changed:
+- Added dedicated grouped-category update flow in transactions screen:
+  - category change in grouped rows now updates all transaction IDs inside that description group via bulk category API.
+  - optional learning/propagation flags are still supported by running the learning step on a representative transaction.
+- Updated grouped view category selector callbacks (mobile + desktop) to use grouped update flow instead of single-transaction flow.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Grouped-mode category changes now persist across refresh and stay consistent with the grouped row.
+
+### 2026-02-21 - Bulk category assignment now supports searchable dropdown in multi-select bar
+Why:
+- In multi-select flow, choosing a category from a long dropdown was slow and error-prone without search.
+- Needed faster assignment when many categories exist.
+
+What changed:
+- Replaced the native `<select>` in the bulk-assignment sticky bar with a custom searchable dropdown.
+- Added inline search input (`חיפוש קטגוריה...`) inside the dropdown.
+- Kept support for assigning `ללא קטגוריה`.
+- Added keyboard and UX behavior:
+  - auto-focus search field when dropdown opens,
+  - closes on outside click and `Escape`,
+  - preserves selected category label in the trigger button.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- No API contract changes.
+
 ### 2026-02-21 - Dashboard now excludes partial periods from all top-level analytics and removes duplicate category-average section
 Why:
 - Periods with incomplete source coverage (missing bank and/or credit in that period) still appeared in dashboard trend, creating misleading drops and noisy high-level picture.
@@ -47,7 +137,6 @@ Files touched:
 - `/src/components/dashboard/CategoryPieChart.tsx`
 - `/src/components/monthly-summary/MonthDetail.tsx`
 - `/page.tsx`
-- `/src/lib/analytics.ts`
 
 Deploy/runtime impact:
 - Requires normal deploy only.
@@ -56,6 +145,70 @@ Deploy/runtime impact:
   - dashboard can show fewer periods in trend when partial periods exist (by design),
   - one duplicate dashboard section removed,
   - category percentage semantics in dashboard are now relative to average income.
+
+### 2026-02-15 - Auto-remove trailing final dot in search inputs
+Why:
+- Some search/filter text arrived with an unwanted trailing dot at the end (for example `Filter for ... .`), which created noisy input UX.
+- Needed a consistent rule: keep regular punctuation behavior, but remove only a single final dot at the end of the input.
+
+What changed:
+- Added shared text utility `stripTrailingFinalDot` to remove a single trailing `.` while preserving other punctuation and ellipsis (`...`).
+- Applied the sanitizer to main search/filter inputs:
+  - transactions search input,
+  - transactions category selector search,
+  - categories icon search,
+  - root `CategorySelector.tsx` search.
+
+Files touched:
+- `/src/lib/text-utils.ts`
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/components/transactions/CategorySelector.tsx`
+- `/src/app/categories/page.tsx`
+- `/CategorySelector.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- No API contract changes.
+
+### 2026-02-15 - Analytics codebase cleanup: shared aggregation core + lint infrastructure restored
+Why:
+- Analytics calculations (period aggregation, completeness logic, category totals) were duplicated across dashboard, monthly summary, and analytics API, increasing risk of drift and harder maintenance.
+- Lint command was non-functional (`eslint.config` missing), reducing code-quality guardrails as the project grows.
+
+What changed:
+- Added a shared analytics core module:
+  - period-level aggregation (income/expense/counts/source coverage),
+  - category aggregation by period,
+  - complete/partial period selection for averages,
+  - monthly trend generation.
+- Refactored dashboard (`/`) and monthly summary (`/monthly-summary`) to use the shared analytics core, reducing duplicated logic while preserving current behavior.
+- Refactored `GET /api/analytics` to use the same shared aggregation logic.
+- Hardened `/api/analytics` query param parsing:
+  - `months` is now validated and clamped to `1..24` (default `6`) to prevent invalid/heavy queries.
+- Restored lint infrastructure for ESLint v9 by adding flat config (`eslint.config.mjs` with Next core-web-vitals + TypeScript presets).
+- Fixed existing lint-blocking errors discovered during the pass:
+  - unescaped quotes in categories empty-state text,
+  - global toast store reassignment pattern (migrated to mutable store object),
+  - parser `prefer-const` issue,
+  - removed unused tip-page icon map/imports.
+
+Files touched:
+- `/src/lib/analytics.ts`
+- `/src/app/page.tsx`
+- `/src/app/monthly-summary/page.tsx`
+- `/src/app/api/analytics/route.ts`
+- `/eslint.config.mjs`
+- `/src/components/ui/Toast.tsx`
+- `/src/app/categories/page.tsx`
+- `/src/services/parsers/BankHapoalimPdfParser.ts`
+- `/src/app/tips/page.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- `npm run lint` now runs successfully (currently with non-blocking warnings only).
+- Build remains successful (`npm run build` passed after refactor).
 
 ### 2026-02-15 - Partial periods detection (missing bank/credit source) with exclusion from averages
 Why:

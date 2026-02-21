@@ -4,8 +4,6 @@ import { TransactionList } from '@/components/transactions/TransactionList';
 // Force dynamic rendering - this page fetches data at runtime
 export const dynamic = 'force-dynamic';
 
-type TransactionWithRelations = Awaited<ReturnType<typeof prisma.transaction.findMany>>[number];
-
 async function getTransactions() {
   const transactions = await prisma.transaction.findMany({
     where: { isExcluded: false },
@@ -16,7 +14,7 @@ async function getTransactions() {
     orderBy: { date: 'desc' }
   });
 
-  return transactions.map((tx: TransactionWithRelations) => ({
+  return transactions.map((tx) => ({
     id: tx.id,
     date: tx.date.toISOString(),
     description: tx.description,

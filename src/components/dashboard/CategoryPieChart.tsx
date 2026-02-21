@@ -12,10 +12,22 @@ interface CategoryData {
 
 interface CategoryPieChartProps {
   data: CategoryData[];
+  averageIncome: number;
 }
 
-export function CategoryPieChart({ data }: CategoryPieChartProps) {
-  const total = data.reduce((sum, cat) => sum + cat.value, 0);
+const MAX_PIE_SEGMENTS = 8;
+
+export function CategoryPieChart({ data, averageIncome }: CategoryPieChartProps) {
+  const pieBase = data.slice(0, MAX_PIE_SEGMENTS);
+  const remainingValue = data
+    .slice(MAX_PIE_SEGMENTS)
+    .reduce((sum, category) => sum + category.value, 0);
+  const pieData = remainingValue > 0
+    ? [
+      ...pieBase,
+      { name: 'אחר', value: remainingValue, color: '#D1D5DB', icon: '' },
+    ]
+    : pieBase;
 
   if (data.length === 0) {
     return (
@@ -30,13 +42,16 @@ export function CategoryPieChart({ data }: CategoryPieChartProps) {
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">ממוצע הוצאות חודשי לפי קטגוריה</h3>
+      <h3 className="text-lg font-semibold text-gray-900 mb-1">ממוצע הוצאות חודשי לפי קטגוריה</h3>
+      <p className="text-sm text-gray-500 mb-4">
+        פריסת כל הקטגוריות ואחוז מתוך ממוצע ההכנסה החודשית
+      </p>
       <div className="flex flex-col lg:flex-row gap-4">
         <div className="w-full lg:w-1/2" style={{ height: 256 }}>
           <ResponsiveContainer width="100%" height={256}>
             <PieChart>
               <Pie
-                data={data.slice(0, 8)} // Show top 8 categories
+                data={pieData}
                 cx="50%"
                 cy="50%"
                 innerRadius={50}
@@ -44,7 +59,7 @@ export function CategoryPieChart({ data }: CategoryPieChartProps) {
                 paddingAngle={2}
                 dataKey="value"
               >
-                {data.slice(0, 8).map((entry, index) => (
+                {pieData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
@@ -61,22 +76,30 @@ export function CategoryPieChart({ data }: CategoryPieChartProps) {
           </ResponsiveContainer>
         </div>
         <div className="w-full lg:w-1/2 flex flex-col justify-center">
-          <div className="space-y-2">
-            {data.slice(0, 6).map((category, index) => (
-              <div key={index} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: category.color }}
-                  />
-                  <span className="text-sm text-gray-700">{category.icon} {category.name}</span>
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            {data.map((category) => {
+              const incomeShare = averageIncome > 0
+                ? (category.value / averageIncome) * 100
+                : null;
+
+              return (
+                <div key={category.name} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: category.color }}
+                    />
+                    <span className="text-sm text-gray-700">{category.icon} {category.name}</span>
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-gray-900">{formatCurrency(category.value)}</p>
+                    <p className="text-xs text-gray-500">
+                      {incomeShare === null ? '—' : `${incomeShare.toFixed(1)}% מהכנסה`}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-left">
-                  <p className="text-sm font-medium text-gray-900">{formatCurrency(category.value)}</p>
-                  <p className="text-xs text-gray-500">{((category.value / total) * 100).toFixed(0)}%</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

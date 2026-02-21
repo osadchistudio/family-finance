@@ -2,12 +2,17 @@ import { prisma } from '@/lib/prisma';
 import { SummaryCard } from '@/components/dashboard/SummaryCard';
 import { ExpenseChart } from '@/components/dashboard/ExpenseChart';
 import { CategoryPieChart } from '@/components/dashboard/CategoryPieChart';
-import { CategoryAveragesList } from '@/components/dashboard/CategoryAveragesList';
 import { RecentTransactions } from '@/components/dashboard/RecentTransactions';
 import dayjs from 'dayjs';
 import { Decimal } from 'decimal.js';
-import { buildPeriodLabels, buildPeriods, getPeriodKey, isBankInstitution, isCreditInstitution, PeriodMode } from '@/lib/period-utils';
+import { buildPeriodLabels, buildPeriods, PeriodMode } from '@/lib/period-utils';
 import { getPeriodModeSetting } from '@/lib/system-settings';
+import {
+  aggregateTransactionsByPeriod,
+  buildAverageCategoryBreakdown,
+  buildMonthlyTrends,
+  selectPeriodsForAverages,
+} from '@/lib/analytics';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,94 +30,39 @@ async function getAnalyticsData(periodMode: PeriodMode) {
     include: { category: true, account: true }
   });
 
-  // Calculate monthly totals
-  const monthlyData: Record<string, { income: Decimal; expense: Decimal; bankCount: number; creditCount: number }> = {};
-  const categoryTotalsByPeriod: Record<string, { name: string; color: string; icon: string; totals: Record<string, Decimal> }> = {};
+  const { periodAggregates, categoryAggregates, requiredSources } = aggregateTransactionsByPeriod(
+    transactions,
+    periods,
+    periodMode
+  );
+  const { periodKeysWithData, completePeriodKeys } =
+    selectPeriodsForAverages(periodAggregates, requiredSources);
 
-  for (const period of periods) {
-    monthlyData[period.key] = { income: new Decimal(0), expense: new Decimal(0), bankCount: 0, creditCount: 0 };
-  }
-
-  for (const tx of transactions) {
-    const monthKey = getPeriodKey(dayjs(tx.date), periodMode);
-    const amount = new Decimal(tx.amount.toString());
-    if (!monthlyData[monthKey]) continue;
-
-    if (amount.greaterThan(0)) {
-      monthlyData[monthKey].income = monthlyData[monthKey].income.plus(amount);
-    } else {
-      monthlyData[monthKey].expense = monthlyData[monthKey].expense.plus(amount.abs());
-    }
-
-    if (isBankInstitution(tx.account?.institution)) {
-      monthlyData[monthKey].bankCount++;
-    }
-    if (isCreditInstitution(tx.account?.institution)) {
-      monthlyData[monthKey].creditCount++;
-    }
-
-    if (tx.category && amount.lessThan(0)) {
-      if (!categoryTotalsByPeriod[tx.category.id]) {
-        categoryTotalsByPeriod[tx.category.id] = {
-          name: tx.category.name,
-          color: tx.category.color || '#888888',
-          icon: tx.category.icon || '',
-          totals: {},
-        };
-      }
-      if (!categoryTotalsByPeriod[tx.category.id].totals[monthKey]) {
-        categoryTotalsByPeriod[tx.category.id].totals[monthKey] = new Decimal(0);
-      }
-      categoryTotalsByPeriod[tx.category.id].totals[monthKey] = categoryTotalsByPeriod[tx.category.id].totals[monthKey].plus(amount.abs());
-    }
-  }
-
-  const requiresBank = transactions.some((tx) => isBankInstitution(tx.account?.institution));
-  const requiresCredit = transactions.some((tx) => isCreditInstitution(tx.account?.institution));
-  const periodEntries = Object.entries(monthlyData);
-  const periodKeysWithData = periodEntries
-    .filter(([, entry]) => entry.income.greaterThan(0) || entry.expense.greaterThan(0))
-    .map(([key]) => key);
-  const completePeriodKeys = periodEntries
-    .filter(([, entry]) => (entry.income.greaterThan(0) || entry.expense.greaterThan(0)))
-    .filter(([, entry]) => (!requiresBank || entry.bankCount > 0) && (!requiresCredit || entry.creditCount > 0))
-    .map(([key]) => key);
-  const periodsUsedForAverage = completePeriodKeys.length > 0 ? completePeriodKeys : periodKeysWithData;
+  const periodsUsedForAverage = completePeriodKeys;
   const periodsForAverageCount = Math.max(periodsUsedForAverage.length, 1);
+  const periodsForDashboard = periods.filter((period) => periodsUsedForAverage.includes(period.key));
 
-  // Monthly trends
-  const monthlyTrends = periods.map((period) => {
-    const data = monthlyData[period.key] || { income: new Decimal(0), expense: new Decimal(0), bankCount: 0, creditCount: 0 };
-    return {
-      month: period.key,
-      monthHebrew: period.chartLabel,
-      income: data.income.toNumber(),
-      expense: data.expense.toNumber(),
-      balance: data.income.minus(data.expense).toNumber(),
-    };
-  });
+  const monthlyTrends = buildMonthlyTrends(periodsForDashboard, periodAggregates);
+  const categoryBreakdown = buildAverageCategoryBreakdown(
+    categoryAggregates,
+    periodsUsedForAverage,
+    periodsForAverageCount
+  );
 
-  // Category breakdown
-  const categoryBreakdown = Object.values(categoryTotalsByPeriod)
-    .map((category) => {
-      const totalInCompletePeriods = periodsUsedForAverage.reduce(
-        (sum, periodKey) => sum.plus(category.totals[periodKey] || 0),
-        new Decimal(0)
-      );
-      return {
-        name: category.name,
-        value: totalInCompletePeriods.div(periodsForAverageCount).toNumber(),
-        color: category.color,
-        icon: category.icon
-      };
-    })
-    .filter((category) => category.value > 0)
-    .sort((a, b) => b.value - a.value);
-
-  const totalIncome = periodsUsedForAverage.reduce((sum, key) => sum.plus(monthlyData[key].income), new Decimal(0));
-  const totalExpense = periodsUsedForAverage.reduce((sum, key) => sum.plus(monthlyData[key].expense), new Decimal(0));
-  const averageMonthlyIncome = totalIncome.div(periodsForAverageCount).toNumber();
-  const averageMonthlyExpense = totalExpense.div(periodsForAverageCount).toNumber();
+  const totalIncome = periodsUsedForAverage.reduce(
+    (sum, key) => sum.plus(periodAggregates[key]?.income || 0),
+    new Decimal(0)
+  );
+  const totalExpense = periodsUsedForAverage.reduce(
+    (sum, key) => sum.plus(periodAggregates[key]?.expense || 0),
+    new Decimal(0)
+  );
+  const averageMonthlyIncome = periodsUsedForAverage.length > 0
+    ? totalIncome.div(periodsForAverageCount).toNumber()
+    : 0;
+  const averageMonthlyExpense = periodsUsedForAverage.length > 0
+    ? totalExpense.div(periodsForAverageCount).toNumber()
+    : 0;
   const averageMonthlyBalance = averageMonthlyIncome - averageMonthlyExpense;
 
   return {
@@ -194,10 +144,11 @@ export default async function HomePage() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ExpenseChart data={analytics.monthlyTrends} />
-        <CategoryPieChart data={analytics.categoryBreakdown} />
+        <CategoryPieChart
+          data={analytics.categoryBreakdown}
+          averageIncome={analytics.averageMonthlyIncome}
+        />
       </div>
-
-      <CategoryAveragesList data={analytics.categoryBreakdown} />
 
       {/* Recent Transactions */}
       <RecentTransactions transactions={recentTransactions} />

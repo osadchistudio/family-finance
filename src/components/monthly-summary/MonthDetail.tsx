@@ -113,7 +113,7 @@ export function MonthDetail({ data, categoryBreakdown, onBack }: MonthDetailProp
 
       {/* Category breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <CategoryPieChart data={categoryBreakdown} />
+        <CategoryPieChart data={categoryBreakdown} averageIncome={data.income} />
 
         {/* Top categories list */}
         <div className="bg-white rounded-xl shadow-sm p-6">

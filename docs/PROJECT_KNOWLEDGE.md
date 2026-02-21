@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-02-15
+Last updated: 2026-02-21
 
 ## Stack
 - Next.js 16.1.6 (App Router, standalone output)
@@ -24,6 +24,38 @@ Last updated: 2026-02-15
 - `/prisma.config.ts` (required so Prisma 7 resolves schema path)
 
 ## Behavior updates
+
+### 2026-02-21 - Dashboard now excludes partial periods from all top-level analytics and removes duplicate category-average section
+Why:
+- Periods with incomplete source coverage (missing bank and/or credit in that period) still appeared in dashboard trend, creating misleading drops and noisy high-level picture.
+- Dashboard showed duplicate "ממוצע הוצאות חודשי לפי קטגוריה" sections with repeated data.
+- Needed category breakdown to clearly show each category as share of monthly average income.
+
+What changed:
+- Dashboard period selection was tightened to use complete periods only (for cards, trend, and category average basis), so partial periods are excluded from dashboard analytics.
+- Dashboard trend chart now renders only complete periods included in the average basis.
+- Removed duplicate lower category-averages block from dashboard.
+- Enhanced dashboard category panel:
+  - keeps pie focused (top segments + "אחר" bucket),
+  - shows full category list in legend area,
+  - displays percentage for each category as share of average monthly income (`% מהכנסה`).
+- Updated monthly-summary month detail integration to pass `averageIncome` into shared category chart component after prop expansion.
+- Added a small typing fix in root `page.tsx` (`TransactionWithRelations`) to avoid implicit-any failure during build type-check path.
+
+Files touched:
+- `/src/app/page.tsx`
+- `/src/components/dashboard/CategoryPieChart.tsx`
+- `/src/components/monthly-summary/MonthDetail.tsx`
+- `/page.tsx`
+- `/src/lib/analytics.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- UI behavior impact:
+  - dashboard can show fewer periods in trend when partial periods exist (by design),
+  - one duplicate dashboard section removed,
+  - category percentage semantics in dashboard are now relative to average income.
 
 ### 2026-02-15 - Partial periods detection (missing bank/credit source) with exclusion from averages
 Why:

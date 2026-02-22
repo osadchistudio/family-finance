@@ -25,6 +25,25 @@ Last updated: 2026-02-22
 
 ## Behavior updates
 
+### 2026-02-22 - Transactions mobile filters moved under a dedicated toggle button
+Why:
+- On mobile transactions view, stacked filter selects consumed too much vertical space and pushed key content downward.
+- Needed a cleaner top area while keeping all filter capabilities available.
+
+What changed:
+- In `/transactions` mobile view, account/category/amount-type selects are now collapsed by default under a `פילטרים` button with icon.
+- Tapping the button expands/collapses those three filters.
+- Added an active-filters counter badge on the button (shows how many of the three filters are currently active).
+- Desktop/tablet (`sm+`) behavior remains unchanged: filters are still visible inline.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- UI-only change in mobile transactions layout.
+
 ### 2026-02-22 - Mobile UX pass for dashboard density and sidebar drawer behavior
 Why:
 - Mobile dashboard felt crowded, especially inside chart cards, with too much horizontal padding reducing effective chart space.

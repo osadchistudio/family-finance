@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { formatCurrency, formatDate, getHebrewMonthName } from '@/lib/formatters';
-import { Search, LayoutList, PieChart, Wand2, Loader2, Layers, ChevronRight, ChevronLeft, CalendarDays, Repeat, MessageSquare, ChevronDown, ChevronUp, Trash2, X, Check, Plus } from 'lucide-react';
+import { Search, LayoutList, PieChart, Wand2, Loader2, Layers, ChevronRight, ChevronLeft, CalendarDays, Repeat, MessageSquare, ChevronDown, ChevronUp, Trash2, X, Check, Plus, SlidersHorizontal } from 'lucide-react';
 import { CategorySelector } from './CategorySelector';
 import { showToast } from '@/components/ui/Toast';
 import dayjs from 'dayjs';
@@ -124,6 +124,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedAccount, setSelectedAccount] = useState<string>('');
   const [selectedAmountType, setSelectedAmountType] = useState<AmountTypeFilter>('all');
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState<string>(''); // '' = all, 'YYYY-MM' = specific
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<Set<string>>(new Set());
@@ -304,6 +305,13 @@ export function TransactionList({ transactions: initialTransactions, categories:
     if (!selectedCategoryOption) return 'בחר קטגוריה לשיוך';
     return `${selectedCategoryOption.icon || '📁'} ${selectedCategoryOption.name}`;
   }, [bulkCategoryId, categories]);
+  const activeMobileFiltersCount = useMemo(() => {
+    let count = 0;
+    if (selectedAccount) count++;
+    if (selectedCategory) count++;
+    if (selectedAmountType !== 'all') count++;
+    return count;
+  }, [selectedAccount, selectedCategory, selectedAmountType]);
   const manualCategoryOptions = useMemo(() => {
     const filtered = categories.filter((category) => {
       if (!category.type) return true;
@@ -1012,45 +1020,69 @@ export function TransactionList({ transactions: initialTransactions, categories:
             className="w-full pr-10 pl-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
-        <div className="w-full sm:w-[180px]">
-          <select
-            value={selectedAccount}
-            onChange={(e) => setSelectedAccount(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+
+        <div className="w-full sm:hidden">
+          <button
+            type="button"
+            onClick={() => setIsMobileFiltersOpen((prev) => !prev)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-700 flex items-center justify-between"
+            aria-expanded={isMobileFiltersOpen}
+            aria-label="פתח או סגור פילטרים"
           >
-            <option value="">כל החשבונות</option>
-            {accounts.map(acc => (
-              <option key={acc.id} value={acc.id}>
-                {acc.name}
-              </option>
-            ))}
-          </select>
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <SlidersHorizontal className="h-4 w-4" />
+              פילטרים
+              {activeMobileFiltersCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs px-1">
+                  {activeMobileFiltersCount}
+                </span>
+              )}
+            </span>
+            <ChevronDown className={`h-4 w-4 transition-transform ${isMobileFiltersOpen ? 'rotate-180' : ''}`} />
+          </button>
         </div>
-        <div className="w-full sm:w-[180px]">
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">כל הקטגוריות</option>
-            <option value="uncategorized">ללא קטגוריה</option>
-            {categories.map(cat => (
-              <option key={cat.id} value={cat.id}>
-                {cat.icon} {cat.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="w-full sm:w-[170px]">
-          <select
-            value={selectedAmountType}
-            onChange={(e) => setSelectedAmountType(e.target.value as AmountTypeFilter)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="all">כל הסכומים</option>
-            <option value="expense">רק הוצאות</option>
-            <option value="income">רק הכנסות</option>
-          </select>
+
+        <div className={`${isMobileFiltersOpen ? 'flex' : 'hidden'} sm:flex w-full flex-col sm:flex-row sm:flex-wrap gap-3`}>
+          <div className="w-full sm:w-[180px]">
+            <select
+              value={selectedAccount}
+              onChange={(e) => setSelectedAccount(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">כל החשבונות</option>
+              {accounts.map(acc => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="w-full sm:w-[180px]">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">כל הקטגוריות</option>
+              <option value="uncategorized">ללא קטגוריה</option>
+              {categories.map(cat => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.icon} {cat.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="w-full sm:w-[170px]">
+            <select
+              value={selectedAmountType}
+              onChange={(e) => setSelectedAmountType(e.target.value as AmountTypeFilter)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="all">כל הסכומים</option>
+              <option value="expense">רק הוצאות</option>
+              <option value="income">רק הכנסות</option>
+            </select>
+          </div>
         </div>
 
         {/* View mode toggle */}

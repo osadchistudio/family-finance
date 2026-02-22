@@ -660,6 +660,33 @@ export function TransactionList({ transactions: initialTransactions, categories:
     }
   }, [manualType, manualIsRecurring]);
 
+  useEffect(() => {
+    if (!isMobileFiltersOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMobileFiltersOpen]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(min-width: 640px)');
+    const handleMediaChange = (event: MediaQueryListEvent) => {
+      if (event.matches) {
+        setIsMobileFiltersOpen(false);
+      }
+    };
+
+    if (mediaQuery.matches) {
+      setIsMobileFiltersOpen(false);
+    }
+
+    mediaQuery.addEventListener('change', handleMediaChange);
+    return () => {
+      mediaQuery.removeEventListener('change', handleMediaChange);
+    };
+  }, []);
+
   // Group transactions by description for grouped view
   const groupedTransactions = useMemo(() => {
     const groups: Record<string, GroupedTransaction> = {};
@@ -1373,11 +1400,17 @@ export function TransactionList({ transactions: initialTransactions, categories:
     }
   };
 
+  const clearQuickFilters = () => {
+    setSelectedAccount('');
+    setSelectedCategory('');
+    setSelectedAmountType('all');
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm">
       {/* Filters */}
       <div className="p-4 border-b flex flex-wrap items-stretch gap-3">
-        <div className="w-full lg:flex-1 lg:min-w-[260px] relative">
+        <div className="hidden sm:block w-full lg:flex-1 lg:min-w-[260px] relative">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
           {searchTerm.trim() && (
             <button
@@ -1402,28 +1435,49 @@ export function TransactionList({ transactions: initialTransactions, categories:
           />
         </div>
 
-        <div className="w-full sm:hidden">
+        <div className="w-full sm:hidden flex items-stretch gap-2">
           <button
             type="button"
-            onClick={() => setIsMobileFiltersOpen((prev) => !prev)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-700 flex items-center justify-between"
+            onClick={() => setIsMobileFiltersOpen(true)}
+            className="relative h-11 w-11 shrink-0 border border-gray-300 rounded-lg bg-white text-gray-700 flex items-center justify-center"
             aria-expanded={isMobileFiltersOpen}
-            aria-label="פתח או סגור פילטרים"
+            aria-label="פתח פילטרים"
           >
-            <span className="flex items-center gap-2 text-sm font-medium">
-              <SlidersHorizontal className="h-4 w-4" />
-              פילטרים
-              {activeMobileFiltersCount > 0 && (
-                <span className="inline-flex items-center justify-center min-w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs px-1">
-                  {activeMobileFiltersCount}
-                </span>
-              )}
-            </span>
-            <ChevronDown className={`h-4 w-4 transition-transform ${isMobileFiltersOpen ? 'rotate-180' : ''}`} />
+            <SlidersHorizontal className="h-4 w-4" />
+            {activeMobileFiltersCount > 0 && (
+              <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] px-1">
+                {activeMobileFiltersCount}
+              </span>
+            )}
           </button>
+
+          <div className="flex-1 relative">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            {searchTerm.trim() && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm('');
+                  searchInputRef.current?.focus();
+                }}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                title="נקה חיפוש"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="חיפוש תנועות או סכום..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(stripTrailingFinalDot(e.target.value))}
+              className="w-full h-11 pr-10 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
         </div>
 
-        <div className={`${isMobileFiltersOpen ? 'flex' : 'hidden'} sm:flex w-full flex-col sm:flex-row sm:flex-wrap gap-3`}>
+        <div className="hidden sm:flex w-full sm:flex-row sm:flex-wrap gap-3">
           <div className="w-full sm:w-[180px]">
             <select
               value={selectedAccount}
@@ -1534,6 +1588,86 @@ export function TransactionList({ transactions: initialTransactions, categories:
         </button>
 
       </div>
+
+      {isMobileFiltersOpen && (
+        <div className="sm:hidden fixed inset-0 z-50">
+          <button
+            type="button"
+            aria-label="סגור פילטרים"
+            onClick={() => setIsMobileFiltersOpen(false)}
+            className="absolute inset-0 bg-black/40"
+          />
+          <div className="absolute inset-x-0 bottom-0 rounded-t-2xl bg-white border-t border-gray-200 shadow-xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">פילטרים מהירים</h3>
+              <button
+                type="button"
+                onClick={() => setIsMobileFiltersOpen(false)}
+                className="p-1 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                aria-label="סגור"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <select
+                value={selectedAccount}
+                onChange={(e) => setSelectedAccount(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">כל החשבונות</option>
+                {accounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">כל הקטגוריות</option>
+                <option value="uncategorized">ללא קטגוריה</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.icon} {cat.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={selectedAmountType}
+                onChange={(e) => setSelectedAmountType(e.target.value as AmountTypeFilter)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="all">כל הסכומים</option>
+                <option value="expense">רק הוצאות</option>
+                <option value="income">רק הכנסות</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={clearQuickFilters}
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium"
+              >
+                נקה פילטרים
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsMobileFiltersOpen(false)}
+                className="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium"
+              >
+                הצג תוצאות
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {recurringSuggestions.length > 0 && (
         <div className="px-4 py-3 border-b bg-indigo-50/40">

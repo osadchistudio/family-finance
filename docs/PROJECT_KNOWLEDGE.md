@@ -25,6 +25,31 @@ Last updated: 2026-02-22
 
 ## Behavior updates
 
+### 2026-02-22 - Mobile transactions filters moved to bottom action sheet
+Why:
+- Mobile transactions header was crowded and filter controls consumed too much vertical space.
+- Needed a cleaner top layout with quick access to filters in an iOS-like bottom action bar.
+
+What changed:
+- Mobile (`< sm`) transactions header now uses:
+  - compact row with filter icon button + search input,
+  - active filters badge on the filter icon.
+- Clicking the mobile filter button opens a bottom action sheet (`fixed` panel from bottom) with:
+  - account filter,
+  - category filter,
+  - amount-type filter,
+  - `נקה פילטרים` and `הצג תוצאות` actions.
+- Added overlay/backdrop and body-scroll lock while sheet is open.
+- Sheet auto-closes when viewport switches to desktop breakpoint (`sm+`), while desktop inline filters remain unchanged.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- UI/UX change only for mobile transactions filter interaction.
+
 ### 2026-02-22 - Smart recurring suggestions (add/remove) based on 3-period patterns with amount tolerance
 Why:
 - Users needed proactive guidance to keep recurring data accurate without manually scanning all transactions.

@@ -7,6 +7,8 @@ import { CategorySelector } from './CategorySelector';
 import { showToast } from '@/components/ui/Toast';
 import dayjs from 'dayjs';
 import { stripTrailingFinalDot } from '@/lib/text-utils';
+import { getPeriodKey, type PeriodMode } from '@/lib/period-utils';
+import { extractMerchantSignature } from '@/lib/merchantSimilarity';
 
 interface Transaction {
   id: string;
@@ -19,6 +21,7 @@ interface Transaction {
     name: string;
     icon: string;
     color: string;
+    type?: 'EXPENSE' | 'INCOME' | 'TRANSFER';
   } | null;
   account: {
     id: string;
@@ -57,6 +60,7 @@ interface TransactionListProps {
   transactions: Transaction[];
   categories: Category[];
   accounts: Account[];
+  periodMode: PeriodMode;
 }
 
 type ViewMode = 'list' | 'byCategory' | 'grouped';
@@ -74,7 +78,39 @@ interface GroupedTransaction {
   dates: string[];
 }
 
+type RecurringSuggestionAction = 'add' | 'remove';
+type RecurringSuggestionDirection = 'expense' | 'income';
+
+interface RecurringSuggestion {
+  key: string;
+  action: RecurringSuggestionAction;
+  direction: RecurringSuggestionDirection;
+  description: string;
+  transactionIds: string[];
+  periodCount: number;
+  consecutivePeriodCount: number;
+  minAmount: number;
+  maxAmount: number;
+  medianAmount: number;
+  lastDate: string;
+  daysSinceLast: number;
+}
+
+interface RecurringSuggestionCluster {
+  key: string;
+  direction: RecurringSuggestionDirection;
+  description: string;
+  allTransactions: Transaction[];
+  nonRecurringTransactions: Transaction[];
+  recurringTransactions: Transaction[];
+}
+
 const AMOUNT_MATCH_EPSILON = 0.01;
+const RECURRING_SUGGESTION_AMOUNT_TOLERANCE = 10;
+const RECURRING_SUGGESTION_MIN_PERIODS = 3;
+const RECURRING_RECENT_WINDOW_DAYS = 45;
+const RECURRING_REMOVE_BASE_THRESHOLD_DAYS = 60;
+const MAX_RECURRING_SUGGESTIONS = 8;
 
 interface ParsedAmountSearch {
   value: number;
@@ -117,7 +153,205 @@ function matchesAmountValue(amount: string, search: ParsedAmountSearch): boolean
     || Math.abs(absoluteAmount - search.value) < AMOUNT_MATCH_EPSILON;
 }
 
-export function TransactionList({ transactions: initialTransactions, categories: initialCategories, accounts }: TransactionListProps) {
+function parseAbsAmount(amountValue: string): number {
+  const parsed = parseFloat(amountValue);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.abs(parsed);
+}
+
+function getMedian(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+  return sorted[mid];
+}
+
+function getRepresentativeDescription(transactions: Transaction[]): string {
+  if (transactions.length === 0) return '';
+  const latest = [...transactions]
+    .sort((a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf())[0];
+  return latest?.description || '';
+}
+
+function getPeriodIndex(periodKey: string): number | null {
+  const [yearStr, monthStr] = periodKey.split('-');
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  if (!Number.isInteger(year) || !Number.isInteger(month)) return null;
+  if (month < 1 || month > 12) return null;
+  return year * 12 + (month - 1);
+}
+
+function getLongestConsecutivePeriodStreak(periodKeys: string[]): number {
+  const indexes = periodKeys
+    .map(getPeriodIndex)
+    .filter((value): value is number => value !== null)
+    .sort((a, b) => a - b);
+
+  if (indexes.length === 0) return 0;
+
+  let longest = 1;
+  let current = 1;
+  for (let i = 1; i < indexes.length; i += 1) {
+    if (indexes[i] === indexes[i - 1] + 1) {
+      current += 1;
+      longest = Math.max(longest, current);
+    } else if (indexes[i] !== indexes[i - 1]) {
+      current = 1;
+    }
+  }
+
+  return longest;
+}
+
+function buildRecurringSuggestionClusters(transactions: Transaction[]): RecurringSuggestionCluster[] {
+  const clusters = new Map<string, RecurringSuggestionCluster>();
+
+  for (const tx of transactions) {
+    const amount = parseFloat(tx.amount);
+    if (!Number.isFinite(amount) || amount === 0) continue;
+    if (tx.category?.type === 'TRANSFER') continue;
+
+    const signature = extractMerchantSignature(tx.description);
+    if (!signature) continue;
+
+    const normalizedSignature = signature.trim().toLowerCase();
+    if (normalizedSignature.length < 2) continue;
+
+    const direction: RecurringSuggestionDirection = amount < 0 ? 'expense' : 'income';
+    const clusterKey = `${direction}|${normalizedSignature}`;
+
+    const existing = clusters.get(clusterKey);
+    if (existing) {
+      existing.allTransactions.push(tx);
+      if (tx.isRecurring) {
+        existing.recurringTransactions.push(tx);
+      } else {
+        existing.nonRecurringTransactions.push(tx);
+      }
+      continue;
+    }
+
+    clusters.set(clusterKey, {
+      key: clusterKey,
+      direction,
+      description: tx.description,
+      allTransactions: [tx],
+      nonRecurringTransactions: tx.isRecurring ? [] : [tx],
+      recurringTransactions: tx.isRecurring ? [tx] : [],
+    });
+  }
+
+  return Array.from(clusters.values()).map((cluster) => ({
+    ...cluster,
+    description: getRepresentativeDescription(cluster.allTransactions),
+  }));
+}
+
+function buildRecurringSuggestions(
+  transactions: Transaction[],
+  periodMode: PeriodMode
+): RecurringSuggestion[] {
+  const now = dayjs();
+  const clusters = buildRecurringSuggestionClusters(transactions);
+  const suggestions: RecurringSuggestion[] = [];
+
+  for (const cluster of clusters) {
+    if (cluster.nonRecurringTransactions.length >= RECURRING_SUGGESTION_MIN_PERIODS && cluster.recurringTransactions.length === 0) {
+      const periodKeySet = new Set(
+        cluster.nonRecurringTransactions.map((tx) => getPeriodKey(dayjs(tx.date), periodMode))
+      );
+      const periodKeys = Array.from(periodKeySet);
+      const consecutivePeriodCount = getLongestConsecutivePeriodStreak(periodKeys);
+
+      if (periodKeys.length >= RECURRING_SUGGESTION_MIN_PERIODS && consecutivePeriodCount >= RECURRING_SUGGESTION_MIN_PERIODS) {
+        const amounts = cluster.nonRecurringTransactions.map((tx) => parseAbsAmount(tx.amount));
+        const medianAmount = getMedian(amounts);
+        const isWithinTolerance = amounts.every(
+          (value) => Math.abs(value - medianAmount) <= RECURRING_SUGGESTION_AMOUNT_TOLERANCE
+        );
+
+        const latestTx = [...cluster.nonRecurringTransactions]
+          .sort((a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf())[0];
+        const daysSinceLast = latestTx ? Math.max(0, now.diff(dayjs(latestTx.date), 'day')) : 9999;
+
+        if (isWithinTolerance && latestTx && daysSinceLast <= RECURRING_RECENT_WINDOW_DAYS) {
+          suggestions.push({
+            key: `add|${cluster.key}`,
+            action: 'add',
+            direction: cluster.direction,
+            description: cluster.description,
+            transactionIds: cluster.nonRecurringTransactions.map((tx) => tx.id),
+            periodCount: periodKeys.length,
+            consecutivePeriodCount,
+            minAmount: Math.min(...amounts),
+            maxAmount: Math.max(...amounts),
+            medianAmount,
+            lastDate: latestTx.date,
+            daysSinceLast,
+          });
+        }
+      }
+    }
+
+    if (cluster.recurringTransactions.length >= RECURRING_SUGGESTION_MIN_PERIODS) {
+      const recurringSorted = [...cluster.recurringTransactions]
+        .sort((a, b) => dayjs(a.date).valueOf() - dayjs(b.date).valueOf());
+      const latestRecurring = recurringSorted[recurringSorted.length - 1];
+      const latestAny = [...cluster.allTransactions]
+        .sort((a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf())[0];
+
+      if (!latestRecurring || !latestAny) continue;
+
+      const intervals: number[] = [];
+      for (let i = 1; i < recurringSorted.length; i += 1) {
+        const diff = Math.abs(dayjs(recurringSorted[i].date).diff(dayjs(recurringSorted[i - 1].date), 'day'));
+        if (diff > 0) intervals.push(diff);
+      }
+
+      const typicalIntervalDays = intervals.length > 0 ? getMedian(intervals) : 30;
+      const overdueThresholdDays = Math.max(
+        RECURRING_REMOVE_BASE_THRESHOLD_DAYS,
+        Math.ceil(typicalIntervalDays * 1.8)
+      );
+      const daysSinceRecurringLast = Math.max(0, now.diff(dayjs(latestRecurring.date), 'day'));
+      const daysSinceAnyLast = Math.max(0, now.diff(dayjs(latestAny.date), 'day'));
+
+      if (daysSinceRecurringLast >= overdueThresholdDays && daysSinceAnyLast > RECURRING_RECENT_WINDOW_DAYS) {
+        const amounts = cluster.recurringTransactions.map((tx) => parseAbsAmount(tx.amount));
+        const recurringPeriodKeys = Array.from(new Set(
+          cluster.recurringTransactions.map((tx) => getPeriodKey(dayjs(tx.date), periodMode))
+        ));
+        const recurringPeriodCount = recurringPeriodKeys.length;
+        const consecutivePeriodCount = getLongestConsecutivePeriodStreak(recurringPeriodKeys);
+
+        suggestions.push({
+          key: `remove|${cluster.key}`,
+          action: 'remove',
+          direction: cluster.direction,
+          description: cluster.description,
+          transactionIds: cluster.recurringTransactions.map((tx) => tx.id),
+          periodCount: recurringPeriodCount,
+          consecutivePeriodCount,
+          minAmount: Math.min(...amounts),
+          maxAmount: Math.max(...amounts),
+          medianAmount: getMedian(amounts),
+          lastDate: latestRecurring.date,
+          daysSinceLast: daysSinceRecurringLast,
+        });
+      }
+    }
+  }
+
+  return suggestions
+    .sort((a, b) => dayjs(b.lastDate).valueOf() - dayjs(a.lastDate).valueOf())
+    .slice(0, MAX_RECURRING_SUGGESTIONS);
+}
+
+export function TransactionList({ transactions: initialTransactions, categories: initialCategories, accounts, periodMode }: TransactionListProps) {
   const [transactions, setTransactions] = useState(initialTransactions);
   const [categories, setCategories] = useState(initialCategories);
   const [searchTerm, setSearchTerm] = useState('');
@@ -145,6 +379,8 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const [manualIsRecurring, setManualIsRecurring] = useState(false);
   const [autoCategorizingTxId, setAutoCategorizingTxId] = useState<string | null>(null);
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
+  const [activeSuggestionKey, setActiveSuggestionKey] = useState<string | null>(null);
+  const [dismissedSuggestionKeys, setDismissedSuggestionKeys] = useState<Set<string>>(new Set());
   const searchInputRef = useRef<HTMLInputElement>(null);
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
   const bulkCategoryMenuRef = useRef<HTMLDivElement>(null);
@@ -327,6 +563,11 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const selectedVisibleCount = visibleIds.filter((id) => selectedTransactionIds.has(id)).length;
   const allVisibleSelected = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
   const selectedCount = selectedTransactionIds.size;
+  const recurringSuggestions = useMemo(
+    () => buildRecurringSuggestions(transactions, periodMode)
+      .filter((suggestion) => !dismissedSuggestionKeys.has(suggestion.key)),
+    [transactions, periodMode, dismissedSuggestionKeys]
+  );
 
   useEffect(() => {
     if (!selectAllCheckboxRef.current) return;
@@ -583,6 +824,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
           name: string;
           icon?: string | null;
           color?: string | null;
+          type?: 'EXPENSE' | 'INCOME' | 'TRANSFER';
         } | null;
         account: {
           id: string;
@@ -605,6 +847,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
           name: createdTx.category.name,
           icon: createdTx.category.icon || '',
           color: createdTx.category.color || '#888',
+          type: createdTx.category.type,
         } : null,
         account: {
           id: createdTx.account.id,
@@ -659,6 +902,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
         name: newCategory.name,
         icon: newCategory.icon || '📁',
         color: newCategory.color || '#6B7280',
+        type: newCategory.type,
       } : null;
       const selectedSet = new Set(selectedIds);
 
@@ -680,6 +924,69 @@ export function TransactionList({ transactions: initialTransactions, categories:
       showToast('שגיאה בעדכון מרוכז של קטגוריה', 'error');
     } finally {
       setIsBulkUpdating(false);
+    }
+  };
+
+  const dismissRecurringSuggestion = (suggestionKey: string) => {
+    setDismissedSuggestionKeys((prev) => {
+      const next = new Set(prev);
+      next.add(suggestionKey);
+      return next;
+    });
+  };
+
+  const handleRecurringSuggestionAction = async (suggestion: RecurringSuggestion) => {
+    if (activeSuggestionKey) return;
+
+    const transactionIds = Array.from(new Set(suggestion.transactionIds)).filter(Boolean);
+    if (transactionIds.length === 0) {
+      dismissRecurringSuggestion(suggestion.key);
+      return;
+    }
+
+    const shouldSetRecurring = suggestion.action === 'add';
+    setActiveSuggestionKey(suggestion.key);
+
+    try {
+      const response = await fetch('/api/transactions/bulk-recurring', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactionIds,
+          isRecurring: shouldSetRecurring,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Bulk recurring update failed');
+      }
+
+      const idsSet = new Set(transactionIds);
+      setTransactions((prev) => prev.map((tx) => (
+        idsSet.has(tx.id)
+          ? { ...tx, isRecurring: shouldSetRecurring }
+          : tx
+      )));
+
+      const updatedCount = Number(payload?.updatedCount || transactionIds.length);
+      if (shouldSetRecurring) {
+        showToast(
+          `סומן כקבוע: ${updatedCount} תנועות ${suggestion.direction === 'expense' ? 'הוצאה' : 'הכנסה'}`,
+          'learning'
+        );
+      } else {
+        showToast(
+          `הוסר מקבועות: ${updatedCount} תנועות ${suggestion.direction === 'expense' ? 'הוצאה' : 'הכנסה'}`,
+          'success'
+        );
+      }
+
+      dismissRecurringSuggestion(suggestion.key);
+    } catch (error) {
+      console.error('Recurring suggestion action error:', error);
+      showToast('שגיאה בעדכון תנועות קבועות', 'error');
+    } finally {
+      setActiveSuggestionKey(null);
     }
   };
 
@@ -707,6 +1014,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
         name: newCategory.name,
         icon: newCategory.icon || '📁',
         color: newCategory.color || '#6B7280',
+        type: newCategory.type,
       } : null;
       const updatedSimilarIds = new Set<string>(
         Array.isArray(result.updatedSimilarIds) ? result.updatedSimilarIds : []
@@ -818,6 +1126,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
         name: categoryMatch.name,
         icon: categoryMatch.icon || '📁',
         color: categoryMatch.color || '#6B7280',
+        type: categoryMatch.type,
       } : null;
 
       const updatedIds = new Set<string>([...transactionIds, ...updatedSimilarIds]);
@@ -1153,6 +1462,64 @@ export function TransactionList({ transactions: initialTransactions, categories:
         </button>
 
       </div>
+
+      {recurringSuggestions.length > 0 && (
+        <div className="px-4 py-3 border-b bg-indigo-50/40">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <h3 className="text-sm font-semibold text-indigo-900">זיהוי חכם לתנועות קבועות</h3>
+            <span className="text-xs text-indigo-700">{recurringSuggestions.length} הצעות</span>
+          </div>
+          <div className="space-y-2">
+            {recurringSuggestions.map((suggestion) => {
+              const isLoading = activeSuggestionKey === suggestion.key;
+              const directionLabel = suggestion.direction === 'expense' ? 'הוצאה' : 'הכנסה';
+              const amountRangeText = Math.round(suggestion.minAmount) === Math.round(suggestion.maxAmount)
+                ? formatCurrency(suggestion.medianAmount)
+                : `${formatCurrency(suggestion.minAmount)} - ${formatCurrency(suggestion.maxAmount)}`;
+
+              return (
+                <div key={suggestion.key} className="rounded-lg border border-indigo-100 bg-white px-3 py-2">
+                  {suggestion.action === 'add' ? (
+                    <p className="text-sm text-gray-800 break-words">
+                      זוהתה {directionLabel} חוזרת <span className="font-semibold">&quot;{suggestion.description}&quot;</span> במשך {suggestion.consecutivePeriodCount} תקופות רצופות
+                      {' '}({suggestion.periodCount} בסך הכל), בטווח {amountRangeText}
+                      <span className="text-gray-500 text-xs mr-1">±₪{RECURRING_SUGGESTION_AMOUNT_TOLERANCE}</span>
+                      {' '}להוסיף לקבועות?
+                    </p>
+                  ) : (
+                    <p className="text-sm text-gray-800 break-words">
+                      לא זוהתה {directionLabel} קבועה <span className="font-semibold">&quot;{suggestion.description}&quot;</span> כבר {suggestion.daysSinceLast} ימים
+                      {' '}(אחרון: {formatDate(suggestion.lastDate)})
+                      {' '}להסיר מקבועות?
+                    </p>
+                  )}
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleRecurringSuggestionAction(suggestion)}
+                      disabled={!!activeSuggestionKey}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      {suggestion.action === 'add' ? 'כן, הוסף לקבועות' : 'כן, הסר מקבועות'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => dismissRecurringSuggestion(suggestion.key)}
+                      disabled={isLoading}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-gray-200 text-gray-700 text-xs font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      לא עכשיו
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {selectedCount > 0 && (
         <div className="sticky top-20 lg:top-3 z-30 px-3 sm:px-4 pt-3 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { TransactionList } from '@/components/transactions/TransactionList';
+import { getPeriodModeSetting } from '@/lib/system-settings';
 
 // Force dynamic rendering - this page fetches data at runtime
 export const dynamic = 'force-dynamic';
@@ -24,7 +25,8 @@ async function getTransactions() {
       id: tx.category.id,
       name: tx.category.name,
       icon: tx.category.icon || '',
-      color: tx.category.color || '#888'
+      color: tx.category.color || '#888',
+      type: tx.category.type,
     } : null,
     account: {
       id: tx.account.id,
@@ -50,10 +52,11 @@ async function getAccounts() {
 }
 
 export default async function TransactionsPage() {
-  const [transactions, categories, accounts] = await Promise.all([
+  const [transactions, categories, accounts, periodMode] = await Promise.all([
     getTransactions(),
     getCategories(),
-    getAccounts()
+    getAccounts(),
+    getPeriodModeSetting(),
   ]);
 
   return (
@@ -71,6 +74,7 @@ export default async function TransactionsPage() {
         transactions={transactions}
         categories={categories}
         accounts={accounts}
+        periodMode={periodMode}
       />
     </div>
   );

@@ -25,6 +25,41 @@ Last updated: 2026-02-22
 
 ## Behavior updates
 
+### 2026-02-22 - Smart recurring suggestions (add/remove) based on 3-period patterns with amount tolerance
+Why:
+- Users needed proactive guidance to keep recurring data accurate without manually scanning all transactions.
+- Needed both directions:
+  - suggest adding recurring when a similar income/expense repeats over time,
+  - suggest removing recurring when a recurring pattern appears to have stopped.
+
+What changed:
+- Added smart recurring detection in transactions screen:
+  - clusters transactions by normalized merchant signature + direction (income/expense),
+  - detects recurring candidates only when the pattern appears across at least 3 periods with at least 3 consecutive periods,
+  - requires amount consistency within `±₪10` around median amount,
+  - supports both expenses and incomes.
+- Added inverse detection for stale recurring items:
+  - when transactions already marked recurring stop appearing for a long-enough window, a removal suggestion is shown.
+- Added actionable suggestion cards in `/transactions` with:
+  - approve add-to-recurring,
+  - approve remove-from-recurring,
+  - dismiss (`לא עכשיו`) per suggestion.
+- Added new API endpoint for safe explicit bulk recurring updates by transaction IDs.
+- Wired transactions page to pass global `periodMode` so detection follows selected period logic (calendar vs billing).
+- Preserved category `type` in transaction mapping/state updates to avoid transfer-category false positives in recurring detection.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/app/api/transactions/bulk-recurring/route.ts`
+- `/src/app/transactions/page.tsx`
+- `/page.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Adds new API capability: `PATCH /api/transactions/bulk-recurring`.
+- Transactions page now shows smart recurring recommendations based on existing data and current period mode.
+
 ### 2026-02-22 - Transactions mobile filters moved under a dedicated toggle button
 Why:
 - On mobile transactions view, stacked filter selects consumed too much vertical space and pushed key content downward.

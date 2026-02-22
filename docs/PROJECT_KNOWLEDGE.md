@@ -25,6 +25,32 @@ Last updated: 2026-02-22
 
 ## Behavior updates
 
+### 2026-02-22 - Mobile bottom navigation for primary sections
+Why:
+- On mobile, important navigation actions needed faster one-tap access without opening the side drawer every time.
+- Required concise one-word labels in bottom nav, while keeping full page titles inside each screen.
+
+What changed:
+- Added mobile-only bottom navigation bar (fixed at page bottom) with 4 primary items:
+  - `לוח` → `/`
+  - `תנועות` → `/transactions`
+  - `סיכום` → `/monthly-summary`
+  - `קבועות` → `/recurring`
+- Active route is highlighted in the bottom bar.
+- Kept existing full page headings unchanged (for example `סיכום חודשי`, `הוצאות קבועות`).
+- Added extra mobile bottom spacing to main layout to prevent content from being covered by the bar.
+- Adjusted mobile scroll-to-top button offset so it does not overlap the bottom navigation.
+
+Files touched:
+- `/src/components/Sidebar.tsx`
+- `/src/components/LayoutShell.tsx`
+- `/src/components/ui/ScrollToTopButton.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- UI-only change affecting mobile navigation layout.
+
 ### 2026-02-22 - Mobile transactions filters moved to bottom action sheet
 Why:
 - Mobile transactions header was crowded and filter controls consumed too much vertical space.

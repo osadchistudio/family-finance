@@ -15,7 +15,7 @@ export function LayoutShell({ children }: LayoutShellProps) {
   return (
     <div className="min-h-screen">
       {!isLoginPage && <Sidebar />}
-      <main className={`flex-1 px-2.5 py-3 sm:p-6 ${isLoginPage ? '' : 'pt-20 lg:pt-6 lg:mr-64'}`}>
+      <main className={`flex-1 px-2.5 py-3 sm:p-6 ${isLoginPage ? '' : 'pt-20 pb-20 sm:pb-6 lg:pt-6 lg:pb-6 lg:mr-64'}`}>
         <div className="max-w-[1700px] mx-auto">
           {children}
         </div>

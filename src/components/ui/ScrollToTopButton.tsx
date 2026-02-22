@@ -22,7 +22,7 @@ export function ScrollToTopButton() {
     <button
       type="button"
       onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-      className="fixed bottom-6 left-6 z-40 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 transition-colors p-3"
+      className="fixed bottom-20 sm:bottom-6 left-4 sm:left-6 z-40 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 transition-colors p-3"
       title="חזרה למעלה"
       aria-label="חזרה למעלה"
     >

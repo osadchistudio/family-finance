@@ -16,6 +16,13 @@ const navigation = [
   { name: 'הגדרות', href: '/settings', icon: Settings },
 ];
 
+const mobileBottomNavigation = [
+  { name: 'לוח', href: '/', icon: LayoutDashboard },
+  { name: 'תנועות', href: '/transactions', icon: List },
+  { name: 'סיכום', href: '/monthly-summary', icon: CalendarDays },
+  { name: 'קבועות', href: '/recurring', icon: Repeat },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -64,6 +71,11 @@ export function Sidebar() {
       })}
     </nav>
   );
+
+  const isBottomNavItemActive = (href: string) => {
+    if (href === '/') return pathname === '/';
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
 
   return (
     <>
@@ -122,6 +134,30 @@ export function Sidebar() {
           </div>
         </div>
       </aside>
+
+      {/* Mobile bottom navigation */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/90 px-1 py-1 pb-[max(0.25rem,env(safe-area-inset-bottom))]">
+        <ul className="grid grid-cols-4 gap-1">
+          {mobileBottomNavigation.map((item) => {
+            const isActive = isBottomNavItemActive(item.href);
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={`flex h-14 flex-col items-center justify-center rounded-lg transition-colors ${
+                    isActive
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                  }`}
+                >
+                  <item.icon className="h-4 w-4" />
+                  <span className="mt-1 text-[11px] font-medium leading-none">{item.name}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
 
       {/* Desktop sidebar */}
       <aside className="hidden lg:block fixed right-0 top-0 z-40 h-screen w-64 bg-white shadow-lg border-l">

@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-02-21
+Last updated: 2026-02-22
 
 ## Stack
 - Next.js 16.1.6 (App Router, standalone output)
@@ -24,6 +24,28 @@ Last updated: 2026-02-21
 - `/prisma.config.ts` (required so Prisma 7 resolves schema path)
 
 ## Behavior updates
+
+### 2026-02-22 - Batch 2 release: transactions manual-entry and category selector UX polish
+Why:
+- After stabilizing dashboard/build in batch 1, the next safe batch focused on transaction workflow improvements requested by product usage.
+- Required a single grouped release for the transaction area to avoid partial UI/API mismatch.
+
+What changed:
+- Included manual transaction creation flow in transactions page (income/expense form + server endpoint).
+- Included grouped-view category persistence flow and bulk category searchable dropdown improvements in the same release group.
+- Included trailing-dot sanitization in category/search inputs used by transactions selectors.
+
+Files touched:
+- `/src/app/api/transactions/route.ts`
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/components/transactions/CategorySelector.tsx`
+- `/CategorySelector.tsx`
+- `/src/lib/text-utils.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Adds/uses `POST /api/transactions` for manual entry.
 
 ### 2026-02-21 - Hotfix: restore production build by removing incorrect transaction type annotation
 Why:

@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check, Sparkles, Search } from 'lucide-react';
+import { stripTrailingFinalDot } from '@/lib/text-utils';
 
 interface Category {
   id: string;
@@ -136,7 +137,7 @@ export function CategorySelector({
               type="text"
               placeholder="חיפוש קטגוריה..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => setSearchTerm(stripTrailingFinalDot(e.target.value))}
               className="w-full pr-8 pl-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>

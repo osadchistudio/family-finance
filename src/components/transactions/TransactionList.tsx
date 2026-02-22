@@ -2,10 +2,11 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { formatCurrency, formatDate, getHebrewMonthName } from '@/lib/formatters';
-import { Search, LayoutList, PieChart, Wand2, Loader2, Layers, ChevronRight, ChevronLeft, CalendarDays, Repeat, MessageSquare, ChevronDown, ChevronUp, Trash2, X } from 'lucide-react';
+import { Search, LayoutList, PieChart, Wand2, Loader2, Layers, ChevronRight, ChevronLeft, CalendarDays, Repeat, MessageSquare, ChevronDown, ChevronUp, Trash2, X, Check, Plus } from 'lucide-react';
 import { CategorySelector } from './CategorySelector';
 import { showToast } from '@/components/ui/Toast';
 import dayjs from 'dayjs';
+import { stripTrailingFinalDot } from '@/lib/text-utils';
 
 interface Transaction {
   id: string;
@@ -34,6 +35,7 @@ interface Category {
   name: string;
   icon: string | null;
   color: string | null;
+  type?: 'EXPENSE' | 'INCOME' | 'TRANSFER';
 }
 
 interface ApiCategory {
@@ -41,6 +43,7 @@ interface ApiCategory {
   name: string;
   icon?: string | null;
   color?: string | null;
+  type?: 'EXPENSE' | 'INCOME' | 'TRANSFER';
 }
 
 interface Account {
@@ -58,6 +61,7 @@ interface TransactionListProps {
 
 type ViewMode = 'list' | 'byCategory' | 'grouped';
 type AmountTypeFilter = 'all' | 'expense' | 'income';
+type ManualTransactionType = 'expense' | 'income';
 
 interface GroupedTransaction {
   description: string;
@@ -124,12 +128,26 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<Set<string>>(new Set());
   const [bulkCategoryId, setBulkCategoryId] = useState('');
+  const [isBulkCategoryMenuOpen, setIsBulkCategoryMenuOpen] = useState(false);
+  const [bulkCategorySearchTerm, setBulkCategorySearchTerm] = useState('');
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [isCreatingManualTransaction, setIsCreatingManualTransaction] = useState(false);
+  const [manualType, setManualType] = useState<ManualTransactionType>('expense');
+  const [manualAmount, setManualAmount] = useState('');
+  const [manualDescription, setManualDescription] = useState('');
+  const [manualDate, setManualDate] = useState(dayjs().format('YYYY-MM-DD'));
+  const [manualCategoryId, setManualCategoryId] = useState('');
+  const [manualAccountId, setManualAccountId] = useState('manual');
+  const [manualNotes, setManualNotes] = useState('');
+  const [manualIsRecurring, setManualIsRecurring] = useState(false);
   const [autoCategorizingTxId, setAutoCategorizingTxId] = useState<string | null>(null);
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
+  const bulkCategoryMenuRef = useRef<HTMLDivElement>(null);
+  const bulkCategorySearchInputRef = useRef<HTMLInputElement>(null);
 
   // Notes inline editing
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -154,6 +172,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
           name: cat.name,
           icon: cat.icon || '📁',
           color: cat.color || '#6B7280',
+          type: cat.type,
         }));
 
         if (active) {
@@ -181,6 +200,8 @@ export function TransactionList({ transactions: initialTransactions, categories:
     if (viewMode === 'grouped') {
       setSelectedTransactionIds(new Set());
       setBulkCategoryId('');
+      setIsBulkCategoryMenuOpen(false);
+      setBulkCategorySearchTerm('');
     }
   }, [viewMode]);
 
@@ -264,6 +285,37 @@ export function TransactionList({ transactions: initialTransactions, categories:
     () => filteredTransactions.map((tx) => tx.id),
     [filteredTransactions]
   );
+  const sortedBulkCategories = useMemo(
+    () => [...categories].sort((a, b) => a.name.localeCompare(b.name, 'he')),
+    [categories]
+  );
+  const filteredBulkCategories = useMemo(() => {
+    const normalized = bulkCategorySearchTerm.trim().toLowerCase();
+    if (!normalized) return sortedBulkCategories;
+    return sortedBulkCategories.filter((cat) => (
+      cat.name.toLowerCase().includes(normalized)
+      || (cat.icon || '').toLowerCase().includes(normalized)
+    ));
+  }, [sortedBulkCategories, bulkCategorySearchTerm]);
+  const selectedBulkCategoryLabel = useMemo(() => {
+    if (!bulkCategoryId) return 'בחר קטגוריה לשיוך';
+    if (bulkCategoryId === 'uncategorized') return 'ללא קטגוריה';
+    const selectedCategoryOption = categories.find((cat) => cat.id === bulkCategoryId);
+    if (!selectedCategoryOption) return 'בחר קטגוריה לשיוך';
+    return `${selectedCategoryOption.icon || '📁'} ${selectedCategoryOption.name}`;
+  }, [bulkCategoryId, categories]);
+  const manualCategoryOptions = useMemo(() => {
+    const filtered = categories.filter((category) => {
+      if (!category.type) return true;
+      if (manualType === 'expense') return category.type !== 'INCOME';
+      return category.type !== 'EXPENSE';
+    });
+    return filtered.sort((a, b) => a.name.localeCompare(b.name, 'he'));
+  }, [categories, manualType]);
+  const manualAccountOptions = useMemo(
+    () => [...accounts].sort((a, b) => a.name.localeCompare(b.name, 'he')),
+    [accounts]
+  );
   const selectedVisibleCount = visibleIds.filter((id) => selectedTransactionIds.has(id)).length;
   const allVisibleSelected = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
   const selectedCount = selectedTransactionIds.size;
@@ -272,6 +324,55 @@ export function TransactionList({ transactions: initialTransactions, categories:
     if (!selectAllCheckboxRef.current) return;
     selectAllCheckboxRef.current.indeterminate = selectedVisibleCount > 0 && !allVisibleSelected;
   }, [selectedVisibleCount, allVisibleSelected]);
+
+  useEffect(() => {
+    if (!isBulkCategoryMenuOpen) return;
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!bulkCategoryMenuRef.current) return;
+      const target = event.target as Node;
+      if (!bulkCategoryMenuRef.current.contains(target)) {
+        setIsBulkCategoryMenuOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsBulkCategoryMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isBulkCategoryMenuOpen]);
+
+  useEffect(() => {
+    if (!isBulkCategoryMenuOpen) return;
+    requestAnimationFrame(() => {
+      bulkCategorySearchInputRef.current?.focus();
+    });
+  }, [isBulkCategoryMenuOpen]);
+
+  useEffect(() => {
+    if (selectedCount > 0) return;
+    setIsBulkCategoryMenuOpen(false);
+    setBulkCategorySearchTerm('');
+  }, [selectedCount]);
+
+  useEffect(() => {
+    if (!manualCategoryId) return;
+    const stillAvailable = manualCategoryOptions.some((category) => category.id === manualCategoryId);
+    if (!stillAvailable) {
+      setManualCategoryId('');
+    }
+  }, [manualCategoryId, manualCategoryOptions]);
+
+  useEffect(() => {
+    if (manualType === 'income' && manualIsRecurring) {
+      setManualIsRecurring(false);
+    }
+  }, [manualType, manualIsRecurring]);
 
   // Group transactions by description for grouped view
   const groupedTransactions = useMemo(() => {
@@ -385,6 +486,137 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const clearSelection = () => {
     setSelectedTransactionIds(new Set());
     setBulkCategoryId('');
+    setIsBulkCategoryMenuOpen(false);
+    setBulkCategorySearchTerm('');
+  };
+
+  const resetManualForm = () => {
+    setManualType('expense');
+    setManualAmount('');
+    setManualDescription('');
+    setManualDate(dayjs().format('YYYY-MM-DD'));
+    setManualCategoryId('');
+    setManualAccountId('manual');
+    setManualNotes('');
+    setManualIsRecurring(false);
+  };
+
+  const openManualModal = () => {
+    resetManualForm();
+    setIsManualModalOpen(true);
+  };
+
+  const closeManualModal = () => {
+    if (isCreatingManualTransaction) return;
+    setIsManualModalOpen(false);
+  };
+
+  const handleBulkCategoryPick = (categoryId: string) => {
+    setBulkCategoryId(categoryId);
+    setIsBulkCategoryMenuOpen(false);
+    setBulkCategorySearchTerm('');
+  };
+
+  const handleCreateManualTransaction = async () => {
+    if (isCreatingManualTransaction) return;
+
+    const description = manualDescription.trim();
+    const normalizedAmount = manualAmount.replace(/[,\s₪]/g, '');
+    const parsedAmount = Number(normalizedAmount);
+
+    if (!description) {
+      showToast('יש להזין תיאור לתנועה', 'info');
+      return;
+    }
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      showToast('יש להזין סכום חיובי תקין', 'info');
+      return;
+    }
+    if (!manualDate) {
+      showToast('יש לבחור תאריך', 'info');
+      return;
+    }
+
+    setIsCreatingManualTransaction(true);
+    try {
+      const response = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description,
+          amount: parsedAmount,
+          type: manualType,
+          date: manualDate,
+          categoryId: manualCategoryId || null,
+          accountId: manualAccountId === 'manual' ? null : manualAccountId,
+          notes: manualNotes.trim() || null,
+          isRecurring: manualIsRecurring,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        if (response.status === 409) {
+          showToast('כבר קיימת תנועה זהה באותו תאריך', 'info');
+          return;
+        }
+        showToast(result?.error || 'שגיאה בהוספת תנועה ידנית', 'error');
+        return;
+      }
+
+      const createdTx = result.transaction as {
+        id: string;
+        date: string;
+        description: string;
+        amount: string | number;
+        categoryId: string | null;
+        category: {
+          id: string;
+          name: string;
+          icon?: string | null;
+          color?: string | null;
+        } | null;
+        account: {
+          id: string;
+          name: string;
+          institution: string;
+        };
+        isAutoCategorized: boolean;
+        isRecurring: boolean;
+        notes: string | null;
+      };
+
+      const mappedTransaction: Transaction = {
+        id: createdTx.id,
+        date: createdTx.date,
+        description: createdTx.description,
+        amount: String(createdTx.amount),
+        categoryId: createdTx.categoryId,
+        category: createdTx.category ? {
+          id: createdTx.category.id,
+          name: createdTx.category.name,
+          icon: createdTx.category.icon || '',
+          color: createdTx.category.color || '#888',
+        } : null,
+        account: {
+          id: createdTx.account.id,
+          name: createdTx.account.name,
+          institution: createdTx.account.institution,
+        },
+        isAutoCategorized: Boolean(createdTx.isAutoCategorized),
+        isRecurring: Boolean(createdTx.isRecurring),
+        notes: createdTx.notes ?? null,
+      };
+
+      setTransactions((prev) => [mappedTransaction, ...prev]);
+      setIsManualModalOpen(false);
+      showToast('התנועה נוספה בהצלחה', 'success');
+    } catch (error) {
+      console.error('Create manual transaction error:', error);
+      showToast('שגיאה בהוספת תנועה ידנית', 'error');
+    } finally {
+      setIsCreatingManualTransaction(false);
+    }
   };
 
   const handleBulkCategoryAssign = async () => {
@@ -513,6 +745,103 @@ export function TransactionList({ transactions: initialTransactions, categories:
     } catch (error) {
       console.error('Error updating category:', error);
       alert('שגיאה בעדכון הקטגוריה');
+    }
+  };
+
+  const handleGroupedCategoryChange = async (
+    groupTransactions: Transaction[],
+    categoryId: string,
+    learnFromThis: boolean,
+    applyToSimilar: boolean
+  ) => {
+    const transactionIds = Array.from(new Set(groupTransactions.map((tx) => tx.id)));
+    if (transactionIds.length === 0) return;
+
+    const normalizedCategoryId = categoryId === 'uncategorized' ? null : categoryId;
+
+    try {
+      const bulkResponse = await fetch('/api/transactions/bulk-category', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactionIds,
+          categoryId: normalizedCategoryId,
+        }),
+      });
+
+      const bulkResult = await bulkResponse.json();
+      if (!bulkResponse.ok) throw new Error(bulkResult?.error || 'Bulk grouped update failed');
+
+      let updatedSimilarIds: string[] = [];
+      let updatedSimilar = 0;
+      let keywordAdded: string | null = null;
+      let propagationSkipped = false;
+      let propagationSkippedDueToSafety = false;
+      let matchedSimilarCount = 0;
+
+      if (learnFromThis || applyToSimilar) {
+        const representativeId = transactionIds[0];
+        const learnResponse = await fetch(`/api/transactions/${representativeId}/category`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            categoryId: normalizedCategoryId,
+            learnFromThis,
+            applyToSimilar,
+          }),
+        });
+
+        const learnResult = await learnResponse.json();
+        if (!learnResponse.ok) throw new Error(learnResult?.error || 'Grouped learning update failed');
+
+        updatedSimilarIds = Array.isArray(learnResult.updatedSimilarIds) ? learnResult.updatedSimilarIds : [];
+        updatedSimilar = Number(learnResult.updatedSimilar || 0);
+        keywordAdded = typeof learnResult.keywordAdded === 'string' ? learnResult.keywordAdded : null;
+        propagationSkipped = Boolean(learnResult.propagationSkipped);
+        propagationSkippedDueToSafety = Boolean(learnResult.propagationSkippedDueToSafety);
+        matchedSimilarCount = Number(learnResult.matchedSimilarCount || 0);
+      }
+
+      const categoryMatch = normalizedCategoryId
+        ? categories.find((cat) => cat.id === normalizedCategoryId) || null
+        : null;
+      const mappedCategory = categoryMatch ? {
+        id: categoryMatch.id,
+        name: categoryMatch.name,
+        icon: categoryMatch.icon || '📁',
+        color: categoryMatch.color || '#6B7280',
+      } : null;
+
+      const updatedIds = new Set<string>([...transactionIds, ...updatedSimilarIds]);
+      setTransactions((prev) => prev.map((tx) => {
+        if (!updatedIds.has(tx.id)) return tx;
+        return {
+          ...tx,
+          categoryId: normalizedCategoryId,
+          category: mappedCategory,
+          isAutoCategorized: false,
+        };
+      }));
+
+      const updatedGroupCount = Number(bulkResult?.updatedCount || transactionIds.length);
+
+      if (applyToSimilar && propagationSkippedDueToSafety) {
+        showToast(
+          `עודכנו ${updatedGroupCount} תנועות בקבוצה. הפצה לדומות נחסמה כי נמצאו ${matchedSimilarCount} דומות`,
+          'info'
+        );
+      } else if (applyToSimilar && propagationSkipped) {
+        showToast(`עודכנו ${updatedGroupCount} תנועות בקבוצה. לא בוצעה הפצה לדומות`, 'info');
+      } else if (applyToSimilar && updatedSimilar > 0) {
+        showToast(`עודכנו ${updatedGroupCount} תנועות בקבוצה ועוד ${updatedSimilar} תנועות דומות`, 'learning');
+      } else if (learnFromThis && keywordAdded) {
+        showToast(`עודכנו ${updatedGroupCount} תנועות בקבוצה. למדתי "${keywordAdded}" להמשך`, 'learning');
+      } else {
+        showToast(`עודכנו ${updatedGroupCount} תנועות בקבוצה`, 'success');
+      }
+    } catch (error) {
+      console.error('Grouped category update error:', error);
+      showToast('שגיאה בעדכון קטגוריה במצב מאוחד', 'error');
     }
   };
 
@@ -679,7 +1008,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
             type="text"
             placeholder="חיפוש תנועות או סכום..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => setSearchTerm(stripTrailingFinalDot(e.target.value))}
             className="w-full pr-10 pl-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
@@ -783,6 +1112,14 @@ export function TransactionList({ transactions: initialTransactions, categories:
           </button>
         )}
 
+        <button
+          onClick={openManualModal}
+          className="w-full sm:w-auto px-4 py-2 rounded-lg border border-blue-200 text-blue-700 hover:bg-blue-50 text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+        >
+          <Plus className="h-4 w-4" />
+          הוסף ידנית
+        </button>
+
       </div>
 
       {selectedCount > 0 && (
@@ -792,19 +1129,65 @@ export function TransactionList({ transactions: initialTransactions, categories:
               נבחרו {selectedCount} תנועות
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full lg:w-auto">
-              <select
-                value={bulkCategoryId}
-                onChange={(e) => setBulkCategoryId(e.target.value)}
-                className="w-full sm:w-[220px] px-3 py-2 border border-blue-200 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">בחר קטגוריה לשיוך</option>
-                <option value="uncategorized">ללא קטגוריה</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.icon} {cat.name}
-                  </option>
-                ))}
-              </select>
+              <div ref={bulkCategoryMenuRef} className="relative w-full sm:w-[260px]">
+                <button
+                  type="button"
+                  onClick={() => setIsBulkCategoryMenuOpen((prev) => !prev)}
+                  className="w-full px-3 py-2 border border-blue-200 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-right flex items-center justify-between"
+                >
+                  <span className="truncate">{selectedBulkCategoryLabel}</span>
+                  <ChevronDown className={`h-4 w-4 text-gray-500 transition-transform ${isBulkCategoryMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isBulkCategoryMenuOpen && (
+                  <div className="absolute top-full mt-1 right-0 z-40 w-full rounded-lg border border-blue-200 bg-white shadow-lg overflow-hidden">
+                    <div className="p-2 border-b border-blue-100">
+                      <div className="relative">
+                        <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <input
+                          ref={bulkCategorySearchInputRef}
+                          type="text"
+                          placeholder="חיפוש קטגוריה..."
+                          value={bulkCategorySearchTerm}
+                          onChange={(e) => setBulkCategorySearchTerm(stripTrailingFinalDot(e.target.value))}
+                          className="w-full pr-8 pl-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="max-h-56 overflow-y-auto py-1">
+                      <button
+                        type="button"
+                        onClick={() => handleBulkCategoryPick('uncategorized')}
+                        className={`w-full px-3 py-2 text-right text-sm hover:bg-gray-50 flex items-center justify-between ${
+                          bulkCategoryId === 'uncategorized' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                        }`}
+                      >
+                        <span>ללא קטגוריה</span>
+                        {bulkCategoryId === 'uncategorized' && <Check className="h-4 w-4" />}
+                      </button>
+
+                      {filteredBulkCategories.length === 0 ? (
+                        <div className="px-3 py-2 text-sm text-gray-500">לא נמצאו קטגוריות</div>
+                      ) : (
+                        filteredBulkCategories.map((cat) => (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => handleBulkCategoryPick(cat.id)}
+                            className={`w-full px-3 py-2 text-right text-sm hover:bg-gray-50 flex items-center justify-between ${
+                              bulkCategoryId === cat.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                            }`}
+                          >
+                            <span className="truncate">{cat.icon || '📁'} {cat.name}</span>
+                            {bulkCategoryId === cat.id && <Check className="h-4 w-4 flex-shrink-0" />}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
               <button
                 onClick={handleBulkCategoryAssign}
                 disabled={isBulkUpdating || !bulkCategoryId}
@@ -1172,7 +1555,14 @@ export function TransactionList({ transactions: initialTransactions, categories:
                       transactionDescription={group.description}
                       currentCategory={group.category}
                       categories={categories as Category[]}
-                      onCategoryChange={handleCategoryChange}
+                      onCategoryChange={async (_txId, categoryId, learnFromThis, applyToSimilar) => {
+                        await handleGroupedCategoryChange(
+                          group.transactions,
+                          categoryId,
+                          learnFromThis,
+                          applyToSimilar
+                        );
+                      }}
                     />
                   </div>
                 );
@@ -1229,7 +1619,14 @@ export function TransactionList({ transactions: initialTransactions, categories:
                             transactionDescription={group.description}
                             currentCategory={group.category}
                             categories={categories as Category[]}
-                            onCategoryChange={handleCategoryChange}
+                            onCategoryChange={async (_txId, categoryId, learnFromThis, applyToSimilar) => {
+                              await handleGroupedCategoryChange(
+                                group.transactions,
+                                categoryId,
+                                learnFromThis,
+                                applyToSimilar
+                              );
+                            }}
                           />
                         </td>
                         <td className="px-4 py-3 text-left">
@@ -1386,6 +1783,174 @@ export function TransactionList({ transactions: initialTransactions, categories:
               );
             })
           )}
+        </div>
+      )}
+
+      {isManualModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/30"
+            onClick={closeManualModal}
+            aria-label="סגור חלון הוספת תנועה ידנית"
+          />
+
+          <div className="relative w-full max-w-xl bg-white rounded-xl border border-gray-200 shadow-xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">הוספת תנועה ידנית</h3>
+                <p className="text-sm text-gray-500">הכנסה או הוצאה שלא הופיעה בקבצים שהעלית</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeManualModal}
+                className="p-1.5 rounded-md text-gray-500 hover:bg-gray-100"
+                disabled={isCreatingManualTransaction}
+                aria-label="סגור"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setManualType('expense')}
+                className={`px-3 py-2 rounded-lg border text-sm font-medium ${
+                  manualType === 'expense'
+                    ? 'bg-red-50 text-red-700 border-red-200'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                הוצאה
+              </button>
+              <button
+                type="button"
+                onClick={() => setManualType('income')}
+                className={`px-3 py-2 rounded-lg border text-sm font-medium ${
+                  manualType === 'income'
+                    ? 'bg-green-50 text-green-700 border-green-200'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                הכנסה
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="space-y-1">
+                <span className="text-xs text-gray-600">סכום</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={manualAmount}
+                  onChange={(e) => setManualAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-xs text-gray-600">תאריך</span>
+                <input
+                  type="date"
+                  value={manualDate}
+                  onChange={(e) => setManualDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </label>
+            </div>
+
+            <label className="space-y-1 block">
+              <span className="text-xs text-gray-600">תיאור</span>
+              <input
+                type="text"
+                value={manualDescription}
+                onChange={(e) => setManualDescription(stripTrailingFinalDot(e.target.value))}
+                placeholder="למשל: תשלום במזומן"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </label>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="space-y-1">
+                <span className="text-xs text-gray-600">חשבון</span>
+                <select
+                  value={manualAccountId}
+                  onChange={(e) => setManualAccountId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="manual">ידני / מזומן</option>
+                  {manualAccountOptions.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-xs text-gray-600">קטגוריה (אופציונלי)</span>
+                <select
+                  value={manualCategoryId}
+                  onChange={(e) => setManualCategoryId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">ללא קטגוריה</option>
+                  {manualCategoryOptions.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.icon || '📁'} {category.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <label className="space-y-1 block">
+              <span className="text-xs text-gray-600">הערה (אופציונלי)</span>
+              <input
+                type="text"
+                value={manualNotes}
+                onChange={(e) => setManualNotes(e.target.value)}
+                placeholder="למשל: עסקה במזומן ללא קבלה"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </label>
+
+            {manualType === 'expense' && (
+              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={manualIsRecurring}
+                  onChange={(e) => setManualIsRecurring(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                לסמן כהוצאה קבועה
+              </label>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={closeManualModal}
+                disabled={isCreatingManualTransaction}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateManualTransaction}
+                disabled={isCreatingManualTransaction}
+                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 inline-flex items-center gap-2"
+              >
+                {isCreatingManualTransaction && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isCreatingManualTransaction ? 'שומר...' : 'הוסף תנועה'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

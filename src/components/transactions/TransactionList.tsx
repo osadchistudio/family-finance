@@ -687,8 +687,10 @@ export function TransactionList({ transactions: initialTransactions, categories:
     };
   }, []);
 
-  // Group transactions by description for grouped view
+  // Group transactions by description for grouped view.
   const groupedTransactions = useMemo(() => {
+    if (viewMode !== 'grouped') return [];
+
     const groups: Record<string, GroupedTransaction> = {};
 
     for (const tx of filteredTransactions) {
@@ -712,35 +714,41 @@ export function TransactionList({ transactions: initialTransactions, categories:
       groups[key].count++;
       groups[key].dates.push(tx.date);
 
-      // Use most recent category if available
+      // Use most recent category if available.
       if (tx.category && !groups[key].category) {
         groups[key].category = tx.category;
         groups[key].categoryId = tx.categoryId;
       }
     }
 
-    // Sort by total amount (expenses first, largest first)
+    // Sort by total amount (expenses first, largest first).
     return Object.values(groups).sort((a, b) => a.totalAmount - b.totalAmount);
-  }, [filteredTransactions]);
+  }, [filteredTransactions, viewMode]);
 
-  // Group transactions by category for the category view
-  const groupedByCategory = filteredTransactions.reduce((acc, tx) => {
-    const categoryKey = tx.categoryId || 'uncategorized';
-    if (!acc[categoryKey]) {
-      acc[categoryKey] = {
-        category: tx.category,
-        transactions: [],
-        total: 0,
-      };
+  // Group transactions by category for the category view.
+  const sortedCategories = useMemo(() => {
+    if (viewMode !== 'byCategory') {
+      return [] as Array<[string, { category: Transaction['category']; transactions: Transaction[]; total: number }]>;
     }
-    acc[categoryKey].transactions.push(tx);
-    acc[categoryKey].total += parseFloat(tx.amount);
-    return acc;
-  }, {} as Record<string, { category: Transaction['category']; transactions: Transaction[]; total: number }>);
 
-  // Sort categories by total (expenses first, largest first)
-  const sortedCategories = Object.entries(groupedByCategory)
-    .sort(([, a], [, b]) => a.total - b.total);
+    const groupedByCategory = filteredTransactions.reduce((acc, tx) => {
+      const categoryKey = tx.categoryId || 'uncategorized';
+      if (!acc[categoryKey]) {
+        acc[categoryKey] = {
+          category: tx.category,
+          transactions: [],
+          total: 0,
+        };
+      }
+      acc[categoryKey].transactions.push(tx);
+      acc[categoryKey].total += parseFloat(tx.amount);
+      return acc;
+    }, {} as Record<string, { category: Transaction['category']; transactions: Transaction[]; total: number }>);
+
+    // Sort categories by total (expenses first, largest first).
+    return Object.entries(groupedByCategory)
+      .sort(([, a], [, b]) => a.total - b.total);
+  }, [filteredTransactions, viewMode]);
 
   const handleAutoCategorize = async () => {
     if (isAutoCategorizing) return;

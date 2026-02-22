@@ -1,16 +1,19 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { LayoutDashboard, Upload, List, CalendarDays, Repeat, FolderOpen, Lightbulb, Settings, Menu, X, LogOut } from 'lucide-react';
 
-const navigation = [
+const primaryNavigation = [
   { name: 'לוח בקרה', href: '/', icon: LayoutDashboard },
-  { name: 'העלאת קבצים', href: '/upload', icon: Upload },
   { name: 'תנועות', href: '/transactions', icon: List },
   { name: 'סיכום חודשי', href: '/monthly-summary', icon: CalendarDays },
   { name: 'הוצאות קבועות', href: '/recurring', icon: Repeat },
+];
+
+const secondaryNavigation = [
+  { name: 'העלאת קבצים', href: '/upload', icon: Upload },
   { name: 'קטגוריות', href: '/categories', icon: FolderOpen },
   { name: 'טיפים לחיסכון', href: '/tips', icon: Lightbulb },
   { name: 'הגדרות', href: '/settings', icon: Settings },
@@ -25,6 +28,7 @@ const mobileBottomNavigation = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleLogout = async () => {
@@ -50,9 +54,16 @@ export function Sidebar() {
     };
   }, [mobileOpen]);
 
-  const navContent = (
+  useEffect(() => {
+    // Warm up core pages for faster bottom-nav transitions on mobile.
+    for (const item of primaryNavigation) {
+      router.prefetch(item.href);
+    }
+  }, [router]);
+
+  const renderNavContent = (items: typeof primaryNavigation | typeof secondaryNavigation) => (
     <nav className="flex-1 space-y-1 p-4">
-      {navigation.map((item) => {
+      {items.map((item) => {
         const isActive = pathname === item.href;
         return (
           <Link
@@ -119,7 +130,7 @@ export function Sidebar() {
               <X className="h-5 w-5" />
             </button>
           </div>
-          {navContent}
+          {renderNavContent(secondaryNavigation)}
           <div className="border-t p-4 space-y-3">
             <button
               onClick={handleLogout}
@@ -165,7 +176,7 @@ export function Sidebar() {
           <div className="flex h-16 items-center justify-center border-b">
             <h1 className="text-xl font-bold text-gray-800">ניהול הוצאות</h1>
           </div>
-          {navContent}
+          {renderNavContent([...primaryNavigation, ...secondaryNavigation])}
           <div className="border-t p-4 space-y-3">
             <button
               onClick={handleLogout}

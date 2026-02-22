@@ -25,6 +25,31 @@ Last updated: 2026-02-22
 
 ## Behavior updates
 
+### 2026-02-22 - Mobile navigation split and faster primary route transitions
+Why:
+- After adding mobile bottom navigation, users experienced slow transitions on key tabs.
+- Mobile side drawer still duplicated the same core destinations already available in bottom navigation, creating unnecessary navigation noise.
+
+What changed:
+- Navigation split:
+  - Kept primary destinations in mobile bottom bar only (`לוח`, `תנועות`, `סיכום`, `קבועות`).
+  - Mobile side drawer now shows only secondary destinations (`העלאת קבצים`, `קטגוריות`, `טיפים לחיסכון`, `הגדרות`).
+  - Desktop sidebar still keeps full navigation set.
+- Added proactive route prefetch for core destinations (`/`, `/transactions`, `/monthly-summary`, `/recurring`) to reduce perceived delay on mobile bottom-nav taps.
+- Added performance optimization in transactions screen:
+  - grouped/category heavy aggregations are now computed only in their relevant view modes instead of every render.
+
+Files touched:
+- `/src/components/Sidebar.tsx`
+- `/src/components/transactions/TransactionList.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- UI/UX change:
+  - less duplication in mobile drawer,
+  - faster feel on main mobile navigation transitions.
+
 ### 2026-02-22 - Mobile bottom navigation for primary sections
 Why:
 - On mobile, important navigation actions needed faster one-tap access without opening the side drawer every time.

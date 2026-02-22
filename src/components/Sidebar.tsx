@@ -32,6 +32,17 @@ export function Sidebar() {
     setMobileOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileOpen]);
+
   const navContent = (
     <nav className="flex-1 space-y-1 p-4">
       {navigation.map((item) => {
@@ -57,15 +68,15 @@ export function Sidebar() {
   return (
     <>
       {/* Mobile top bar */}
-      <div className="lg:hidden fixed top-0 inset-x-0 z-50 h-16 bg-white border-b shadow-sm">
+      <div className="lg:hidden fixed top-0 inset-x-0 z-40 h-16 bg-white border-b shadow-sm">
         <div className="h-full px-4 flex items-center justify-between">
           <h1 className="text-lg font-bold text-gray-800">ניהול הוצאות</h1>
           <button
-            onClick={() => setMobileOpen(prev => !prev)}
+            onClick={() => setMobileOpen(true)}
             className="p-2 rounded-lg hover:bg-gray-100 text-gray-700"
-            aria-label={mobileOpen ? 'סגור תפריט' : 'פתח תפריט'}
+            aria-label="פתח תפריט"
           >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            <Menu className="h-5 w-5" />
           </button>
         </div>
       </div>
@@ -73,7 +84,7 @@ export function Sidebar() {
       {/* Mobile overlay */}
       {mobileOpen && (
         <button
-          className="lg:hidden fixed inset-0 z-40 bg-black/35"
+          className="lg:hidden fixed inset-0 z-50 bg-black/35"
           onClick={() => setMobileOpen(false)}
           aria-label="סגור תפריט"
         />
@@ -81,8 +92,8 @@ export function Sidebar() {
 
       {/* Mobile drawer */}
       <aside
-        className={`lg:hidden fixed right-0 top-0 z-50 h-screen w-[82%] max-w-72 bg-white border-l shadow-xl transform transition-transform duration-200 ${
-          mobileOpen ? 'translate-x-0' : 'translate-x-full'
+        className={`lg:hidden fixed left-0 top-0 z-[60] h-screen w-[82%] max-w-72 bg-white border-r shadow-xl transform transition-transform duration-200 ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         <div className="flex h-full flex-col">

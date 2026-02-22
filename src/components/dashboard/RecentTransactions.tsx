@@ -23,7 +23,7 @@ interface RecentTransactionsProps {
 export function RecentTransactions({ transactions }: RecentTransactionsProps) {
   if (transactions.length === 0) {
     return (
-      <div className="bg-white rounded-xl shadow-sm p-6">
+      <div className="bg-white rounded-xl shadow-sm p-3 sm:p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900">תנועות אחרונות</h3>
         </div>
@@ -35,12 +35,12 @@ export function RecentTransactions({ transactions }: RecentTransactionsProps) {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6">
+    <div className="bg-white rounded-xl shadow-sm p-3 sm:p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">תנועות אחרונות</h3>
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900">תנועות אחרונות</h3>
         <Link
           href="/transactions"
-          className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+          className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
         >
           לכל התנועות
           <ArrowLeft className="h-4 w-4" />

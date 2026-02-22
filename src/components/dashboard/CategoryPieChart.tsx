@@ -31,9 +31,9 @@ export function CategoryPieChart({ data, averageIncome }: CategoryPieChartProps)
 
   if (data.length === 0) {
     return (
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">ממוצע הוצאות חודשי לפי קטגוריה</h3>
-        <div className="h-64 flex items-center justify-center text-gray-500">
+      <div className="bg-white rounded-xl shadow-sm p-3 sm:p-6">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">ממוצע הוצאות חודשי לפי קטגוריה</h3>
+        <div className="h-[220px] sm:h-64 flex items-center justify-center text-gray-500">
           אין נתונים להצגה
         </div>
       </div>
@@ -41,21 +41,21 @@ export function CategoryPieChart({ data, averageIncome }: CategoryPieChartProps)
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-1">ממוצע הוצאות חודשי לפי קטגוריה</h3>
-      <p className="text-sm text-gray-500 mb-4">
+    <div className="bg-white rounded-xl shadow-sm p-3 sm:p-6">
+      <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1">ממוצע הוצאות חודשי לפי קטגוריה</h3>
+      <p className="text-xs sm:text-sm text-gray-500 mb-3 sm:mb-4">
         פריסת כל הקטגוריות ואחוז מתוך ממוצע ההכנסה החודשית
       </p>
       <div className="flex flex-col lg:flex-row gap-4">
-        <div className="w-full lg:w-1/2" style={{ height: 256 }}>
-          <ResponsiveContainer width="100%" height={256}>
+        <div className="w-full lg:w-1/2 h-[220px] sm:h-64">
+          <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
                 data={pieData}
                 cx="50%"
                 cy="50%"
-                innerRadius={50}
-                outerRadius={80}
+                innerRadius={42}
+                outerRadius={72}
                 paddingAngle={2}
                 dataKey="value"
               >
@@ -76,7 +76,7 @@ export function CategoryPieChart({ data, averageIncome }: CategoryPieChartProps)
           </ResponsiveContainer>
         </div>
         <div className="w-full lg:w-1/2 flex flex-col justify-center">
-          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+          <div className="space-y-2 max-h-[220px] sm:max-h-64 overflow-y-auto pr-1">
             {data.map((category) => {
               const incomeShare = averageIncome > 0
                 ? (category.value / averageIncome) * 100
@@ -89,10 +89,10 @@ export function CategoryPieChart({ data, averageIncome }: CategoryPieChartProps)
                       className="w-3 h-3 rounded-full"
                       style={{ backgroundColor: category.color }}
                     />
-                    <span className="text-sm text-gray-700">{category.icon} {category.name}</span>
+                    <span className="text-xs sm:text-sm text-gray-700">{category.icon} {category.name}</span>
                   </div>
                   <div className="text-left">
-                    <p className="text-sm font-medium text-gray-900">{formatCurrency(category.value)}</p>
+                    <p className="text-xs sm:text-sm font-medium text-gray-900">{formatCurrency(category.value)}</p>
                     <p className="text-xs text-gray-500">
                       {incomeShare === null ? '—' : `${incomeShare.toFixed(1)}% מהכנסה`}
                     </p>

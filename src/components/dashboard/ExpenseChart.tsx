@@ -18,9 +18,9 @@ interface ExpenseChartProps {
 export function ExpenseChart({ data }: ExpenseChartProps) {
   if (data.length === 0) {
     return (
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">מגמת הוצאות</h3>
-        <div className="h-64 flex items-center justify-center text-gray-500">
+      <div className="bg-white rounded-xl shadow-sm p-3 sm:p-6">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">מגמת הוצאות</h3>
+        <div className="h-[220px] sm:h-64 flex items-center justify-center text-gray-500">
           אין נתונים להצגה. העלה קבצי תנועות כדי לראות את הגרף.
         </div>
       </div>
@@ -28,11 +28,11 @@ export function ExpenseChart({ data }: ExpenseChartProps) {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">מגמת הוצאות והכנסות</h3>
-      <div style={{ height: 256 }}>
-        <ResponsiveContainer width="100%" height={256}>
-          <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+    <div className="bg-white rounded-xl shadow-sm p-3 sm:p-6">
+      <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">מגמת הוצאות והכנסות</h3>
+      <div className="h-[220px] sm:h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 8, right: 0, left: -16, bottom: 0 }}>
             <defs>
               <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#22C55E" stopOpacity={0.3} />
@@ -46,16 +46,17 @@ export function ExpenseChart({ data }: ExpenseChartProps) {
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
             <XAxis
               dataKey="monthHebrew"
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 11 }}
               tickLine={false}
               axisLine={false}
+              minTickGap={12}
             />
             <YAxis
               tickFormatter={(value) => `${(value / 1000).toFixed(0)}K`}
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 11 }}
               tickLine={false}
               axisLine={false}
-              width={50}
+              width={36}
             />
             <Tooltip
               formatter={(value, name) => [
@@ -91,14 +92,14 @@ export function ExpenseChart({ data }: ExpenseChartProps) {
           </AreaChart>
         </ResponsiveContainer>
       </div>
-      <div className="flex items-center justify-center gap-6 mt-4">
+      <div className="flex items-center justify-center gap-4 sm:gap-6 mt-3 sm:mt-4">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-green-500" />
-          <span className="text-sm text-gray-600">הכנסות</span>
+          <span className="text-xs sm:text-sm text-gray-600">הכנסות</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-red-500" />
-          <span className="text-sm text-gray-600">הוצאות</span>
+          <span className="text-xs sm:text-sm text-gray-600">הוצאות</span>
         </div>
       </div>
     </div>

@@ -25,6 +25,38 @@ Last updated: 2026-02-22
 
 ## Behavior updates
 
+### 2026-02-22 - Mobile UX pass for dashboard density and sidebar drawer behavior
+Why:
+- Mobile dashboard felt crowded, especially inside chart cards, with too much horizontal padding reducing effective chart space.
+- Mobile side menu had inconsistent behavior: opener appeared on one side while drawer opened from the opposite side, and two close (`X`) controls were visible at once.
+
+What changed:
+- Sidebar mobile behavior:
+  - drawer now opens from the same side as the opener (left side),
+  - top bar button is always a menu opener (no second close icon there),
+  - only one close control remains inside the drawer header,
+  - overlay sits above the top bar while open,
+  - body scroll is locked while the drawer is open.
+- Dashboard mobile density:
+  - reduced main mobile page padding,
+  - reduced card/chart internal padding on mobile,
+  - reduced chart axis spacing and tightened legend typography for better plot area usage,
+  - on mobile dashboard, only two primary KPI cards are shown (income/expense), while balance/savings remain from `sm` and up.
+
+Files touched:
+- `/src/components/Sidebar.tsx`
+- `/src/components/LayoutShell.tsx`
+- `/src/app/page.tsx`
+- `/src/components/dashboard/SummaryCard.tsx`
+- `/src/components/dashboard/ExpenseChart.tsx`
+- `/src/components/dashboard/CategoryPieChart.tsx`
+- `/src/components/dashboard/RecentTransactions.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- UI-only behavior change on mobile layout and navigation.
+
 ### 2026-02-22 - Batch 3 release: shared analytics adoption in monthly summary/API and lint stabilization
 Why:
 - Analytics aggregation logic was still duplicated between monthly summary and analytics API, increasing drift risk.

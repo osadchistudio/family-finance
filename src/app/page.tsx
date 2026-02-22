@@ -105,7 +105,7 @@ export default async function HomePage() {
   const recentTransactions = await getRecentTransactions();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <h1 className="text-2xl font-bold text-gray-900">לוח בקרה</h1>
         <div className="text-sm text-gray-500 text-left">
@@ -118,7 +118,7 @@ export default async function HomePage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <SummaryCard
           title="ממוצע הכנסות חודשי"
           value={analytics.averageMonthlyIncome}
@@ -129,20 +129,24 @@ export default async function HomePage() {
           value={analytics.averageMonthlyExpense}
           type="expense"
         />
-        <SummaryCard
-          title="ממוצע יתרה חודשית"
-          value={analytics.averageMonthlyBalance}
-          type="balance"
-        />
-        <SummaryCard
-          title="ממוצע חיסכון חודשי"
-          value={analytics.averageMonthlySavings}
-          type="savings"
-        />
+        <div className="hidden sm:block">
+          <SummaryCard
+            title="ממוצע יתרה חודשית"
+            value={analytics.averageMonthlyBalance}
+            type="balance"
+          />
+        </div>
+        <div className="hidden sm:block">
+          <SummaryCard
+            title="ממוצע חיסכון חודשי"
+            value={analytics.averageMonthlySavings}
+            type="savings"
+          />
+        </div>
       </div>
 
       {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <ExpenseChart data={analytics.monthlyTrends} />
         <CategoryPieChart
           data={analytics.categoryBreakdown}

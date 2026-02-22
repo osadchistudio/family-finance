@@ -33,11 +33,11 @@ export function SummaryCard({ title, value, type, format = 'currency', trend }: 
     : formatCurrency(Math.abs(value));
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6">
+    <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-500">{title}</p>
-          <p className={`text-2xl font-bold mt-1 ${
+          <p className="text-xs sm:text-sm font-medium text-gray-500">{title}</p>
+          <p className={`text-2xl sm:text-2xl font-bold mt-1 ${
             type === 'expense' ? 'text-red-600' : type === 'income' ? 'text-green-600' : 'text-gray-900'
           }`}>
             {displayValue}
@@ -48,8 +48,8 @@ export function SummaryCard({ title, value, type, format = 'currency', trend }: 
             </p>
           )}
         </div>
-        <div className={`p-3 rounded-full ${colorClass}`}>
-          <Icon className="h-6 w-6" />
+        <div className={`p-2.5 sm:p-3 rounded-full ${colorClass}`}>
+          <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { TransactionList } from '@/components/transactions/TransactionList';
 import { getPeriodModeSetting } from '@/lib/system-settings';
+import { getRecurringSuggestionSnoozes } from '@/lib/recurring-suggestion-snooze';
 
 // Force dynamic rendering - this page fetches data at runtime
 export const dynamic = 'force-dynamic';
@@ -52,11 +53,12 @@ async function getAccounts() {
 }
 
 export default async function TransactionsPage() {
-  const [transactions, categories, accounts, periodMode] = await Promise.all([
+  const [transactions, categories, accounts, periodMode, initialSnoozedSuggestionExpirations] = await Promise.all([
     getTransactions(),
     getCategories(),
     getAccounts(),
     getPeriodModeSetting(),
+    getRecurringSuggestionSnoozes(),
   ]);
 
   return (
@@ -75,6 +77,7 @@ export default async function TransactionsPage() {
         categories={categories}
         accounts={accounts}
         periodMode={periodMode}
+        initialSnoozedSuggestionExpirations={initialSnoozedSuggestionExpirations}
       />
     </div>
   );

@@ -25,6 +25,32 @@ Last updated: 2026-02-22
 
 ## Behavior updates
 
+### 2026-02-22 - Recurring suggestion snooze now loaded server-side (no flash on page enter)
+Why:
+- Snoozed recurring suggestions briefly appeared and then disappeared after page load.
+- Root cause: suggestions rendered before client-side snooze fetch completed.
+- Needed smoother UX and lighter page startup work.
+
+What changed:
+- Moved initial recurring-snooze state loading to server-side transactions page data fetch.
+- Transactions list now receives `initialSnoozedSuggestionExpirations` as props, so snoozed items are filtered before first paint.
+- Removed client-side startup fetch for snooze map from `TransactionList`.
+- Extracted reusable snooze parsing/validation helpers to a shared lib used by both page loaders and API route.
+
+Files touched:
+- `/src/lib/recurring-suggestion-snooze.ts`
+- `/src/app/transactions/page.tsx`
+- `/page.tsx`
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/app/api/transactions/recurring-suggestions-snooze/route.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Runtime impact:
+  - no visible suggestion flash on entering `/transactions`,
+  - one fewer client request during initial transactions page render.
+
 ### 2026-02-22 - Mobile navigation split and faster primary route transitions
 Why:
 - After adding mobile bottom navigation, users experienced slow transitions on key tabs.

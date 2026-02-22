@@ -9,6 +9,7 @@ import dayjs from 'dayjs';
 import { stripTrailingFinalDot } from '@/lib/text-utils';
 import { getPeriodKey, type PeriodMode } from '@/lib/period-utils';
 import { extractMerchantSignature } from '@/lib/merchantSimilarity';
+import type { SnoozedSuggestionMap } from '@/lib/recurring-suggestion-snooze';
 
 interface Transaction {
   id: string;
@@ -61,6 +62,7 @@ interface TransactionListProps {
   categories: Category[];
   accounts: Account[];
   periodMode: PeriodMode;
+  initialSnoozedSuggestionExpirations?: SnoozedSuggestionMap;
 }
 
 type ViewMode = 'list' | 'byCategory' | 'grouped';
@@ -353,7 +355,13 @@ function buildRecurringSuggestions(
     .slice(0, MAX_RECURRING_SUGGESTIONS);
 }
 
-export function TransactionList({ transactions: initialTransactions, categories: initialCategories, accounts, periodMode }: TransactionListProps) {
+export function TransactionList({
+  transactions: initialTransactions,
+  categories: initialCategories,
+  accounts,
+  periodMode,
+  initialSnoozedSuggestionExpirations = {},
+}: TransactionListProps) {
   const [transactions, setTransactions] = useState(initialTransactions);
   const [categories, setCategories] = useState(initialCategories);
   const [searchTerm, setSearchTerm] = useState('');
@@ -383,7 +391,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
   const [activeSuggestionKey, setActiveSuggestionKey] = useState<string | null>(null);
   const [snoozingSuggestionKey, setSnoozingSuggestionKey] = useState<string | null>(null);
-  const [snoozedSuggestionExpirations, setSnoozedSuggestionExpirations] = useState<Record<string, string>>({});
+  const [snoozedSuggestionExpirations, setSnoozedSuggestionExpirations] = useState<SnoozedSuggestionMap>(initialSnoozedSuggestionExpirations);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
   const bulkCategoryMenuRef = useRef<HTMLDivElement>(null);
@@ -611,40 +619,6 @@ export function TransactionList({ transactions: initialTransactions, categories:
     setIsBulkCategoryMenuOpen(false);
     setBulkCategorySearchTerm('');
   }, [selectedCount]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadSnoozedSuggestions = async () => {
-      try {
-        const response = await fetch('/api/transactions/recurring-suggestions-snooze', {
-          cache: 'no-store',
-        });
-        if (!response.ok) return;
-
-        const payload = await response.json();
-        if (!isMounted || !payload || typeof payload !== 'object') return;
-
-        const rawSnoozed = (payload as { snoozed?: unknown }).snoozed;
-        if (!rawSnoozed || typeof rawSnoozed !== 'object' || Array.isArray(rawSnoozed)) return;
-
-        const normalized: Record<string, string> = {};
-        for (const [key, value] of Object.entries(rawSnoozed as Record<string, unknown>)) {
-          if (typeof key !== 'string' || typeof value !== 'string') continue;
-          normalized[key] = value;
-        }
-        setSnoozedSuggestionExpirations(normalized);
-      } catch {
-        // Keep UI working even if snooze state could not be loaded.
-      }
-    };
-
-    void loadSnoozedSuggestions();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (!manualCategoryId) return;

@@ -27,7 +27,23 @@ async function getAnalyticsData(periodMode: PeriodMode) {
       date: { gte: startDate, lte: endDate },
       isExcluded: false
     },
-    include: { category: true, account: true }
+    select: {
+      date: true,
+      amount: true,
+      category: {
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          icon: true,
+        },
+      },
+      account: {
+        select: {
+          institution: true,
+        },
+      },
+    }
   });
 
   const { periodAggregates, categoryAggregates, requiredSources } = aggregateTransactionsByPeriod(
@@ -81,7 +97,19 @@ async function getAnalyticsData(periodMode: PeriodMode) {
 async function getRecentTransactions() {
   const transactions = await prisma.transaction.findMany({
     where: { isExcluded: false },
-    include: { category: true },
+    select: {
+      id: true,
+      date: true,
+      description: true,
+      amount: true,
+      category: {
+        select: {
+          name: true,
+          icon: true,
+          color: true,
+        },
+      },
+    },
     orderBy: { date: 'desc' },
     take: 10
   });

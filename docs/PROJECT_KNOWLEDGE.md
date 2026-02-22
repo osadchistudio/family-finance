@@ -25,6 +25,44 @@ Last updated: 2026-02-22
 
 ## Behavior updates
 
+### 2026-02-22 - Mobile route-speed optimization via smaller DB payloads, progressive list rendering, and loading states
+Why:
+- Mobile navigation between core screens still felt slow, especially when opening the transactions page with large datasets.
+- Initial list-mode rendering built a very large DOM at once, which increased time to interactive on mobile devices.
+- Route transitions needed immediate visual feedback while server data is loading.
+
+What changed:
+- Reduced Prisma query payloads from broad `include` to minimal `select` fields in key data-heavy pages.
+- Added progressive rendering in transactions `list` view:
+  - initial render shows first 120 rows,
+  - `הצג עוד` loads additional chunks of 120 rows.
+- Updated visible-selection logic in list mode to use currently rendered rows only, preventing heavy select computations on very large filtered sets.
+- Added App Router loading skeletons for primary screens to improve perceived transition speed:
+  - dashboard (`/`),
+  - transactions (`/transactions`),
+  - monthly summary (`/monthly-summary`),
+  - recurring (`/recurring`).
+- Kept these pages on runtime dynamic rendering (`force-dynamic`) to preserve fresh DB reads and avoid build-time DB dependency issues.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/app/page.tsx`
+- `/src/app/transactions/page.tsx`
+- `/src/app/monthly-summary/page.tsx`
+- `/src/app/recurring/page.tsx`
+- `/page.tsx`
+- `/src/app/loading.tsx`
+- `/src/app/transactions/loading.tsx`
+- `/src/app/monthly-summary/loading.tsx`
+- `/src/app/recurring/loading.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Runtime behavior change:
+  - large transaction lists now render incrementally in list mode,
+  - users see immediate loading skeletons during route transitions.
+
 ### 2026-02-22 - Recurring suggestion snooze now loaded server-side (no flash on page enter)
 Why:
 - Snoozed recurring suggestions briefly appeared and then disappeared after page load.

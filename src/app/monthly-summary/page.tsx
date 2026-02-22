@@ -129,7 +129,23 @@ async function getMonthlySummaryData(periodMode: PeriodMode) {
       date: { gte: minStart.toDate(), lte: maxEnd.toDate() },
       isExcluded: false,
     },
-    include: { category: true, account: true },
+    select: {
+      date: true,
+      amount: true,
+      category: {
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          icon: true,
+        },
+      },
+      account: {
+        select: {
+          institution: true,
+        },
+      },
+    },
     orderBy: { date: 'desc' },
   });
 

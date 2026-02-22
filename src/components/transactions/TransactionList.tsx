@@ -115,6 +115,8 @@ const RECURRING_REMOVE_BASE_THRESHOLD_DAYS = 60;
 const MAX_RECURRING_SUGGESTIONS = 8;
 const RECURRING_SNOOZE_DEFAULT_DAYS = 30;
 const RECURRING_SNOOZE_LONG_DAYS = 90;
+const LIST_INITIAL_RENDER_LIMIT = 120;
+const LIST_RENDER_STEP = 120;
 
 interface ParsedAmountSearch {
   value: number;
@@ -392,6 +394,7 @@ export function TransactionList({
   const [activeSuggestionKey, setActiveSuggestionKey] = useState<string | null>(null);
   const [snoozingSuggestionKey, setSnoozingSuggestionKey] = useState<string | null>(null);
   const [snoozedSuggestionExpirations, setSnoozedSuggestionExpirations] = useState<SnoozedSuggestionMap>(initialSnoozedSuggestionExpirations);
+  const [listRenderLimit, setListRenderLimit] = useState(LIST_INITIAL_RENDER_LIMIT);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
   const bulkCategoryMenuRef = useRef<HTMLDivElement>(null);
@@ -529,9 +532,16 @@ export function TransactionList({
     return matchesSearch && matchesCategory && matchesAccount && matchesAmountType && matchesMonth;
   });
 
+  const renderedListTransactions = useMemo(
+    () => filteredTransactions.slice(0, listRenderLimit),
+    [filteredTransactions, listRenderLimit]
+  );
+  const hasMoreListTransactions = filteredTransactions.length > renderedListTransactions.length;
+  const remainingListTransactionsCount = Math.max(0, filteredTransactions.length - renderedListTransactions.length);
+
   const visibleIds = useMemo(
-    () => filteredTransactions.map((tx) => tx.id),
-    [filteredTransactions]
+    () => (viewMode === 'list' ? renderedListTransactions : filteredTransactions).map((tx) => tx.id),
+    [viewMode, renderedListTransactions, filteredTransactions]
   );
   const sortedBulkCategories = useMemo(
     () => [...categories].sort((a, b) => a.name.localeCompare(b.name, 'he')),
@@ -579,6 +589,10 @@ export function TransactionList({
       .filter((suggestion) => !snoozedSuggestionExpirations[suggestion.key]),
     [transactions, periodMode, snoozedSuggestionExpirations]
   );
+
+  useEffect(() => {
+    setListRenderLimit(LIST_INITIAL_RENDER_LIMIT);
+  }, [viewMode, searchTerm, selectedCategory, selectedAccount, selectedAmountType, selectedMonth]);
 
   useEffect(() => {
     if (!selectAllCheckboxRef.current) return;
@@ -1388,6 +1402,10 @@ export function TransactionList({
     setSelectedAmountType('all');
   };
 
+  const loadMoreListTransactions = () => {
+    setListRenderLimit((prev) => prev + LIST_RENDER_STEP);
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm">
       {/* Filters */}
@@ -1868,7 +1886,7 @@ export function TransactionList({
                   : 'לא נמצאו תנועות התואמות לחיפוש'}
               </div>
             ) : (
-              filteredTransactions.map((tx) => {
+              renderedListTransactions.map((tx) => {
                 const amount = parseFloat(tx.amount);
                 const isExpense = amount < 0;
 
@@ -1972,6 +1990,18 @@ export function TransactionList({
             )}
           </div>
 
+          {hasMoreListTransactions && (
+            <div className="md:hidden px-4 py-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={loadMoreListTransactions}
+                className="w-full px-4 py-2 rounded-lg border border-blue-200 text-blue-700 text-sm font-medium hover:bg-blue-50 transition-colors"
+              >
+                הצג עוד {Math.min(LIST_RENDER_STEP, remainingListTransactionsCount)} תנועות
+              </button>
+            </div>
+          )}
+
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full min-w-[900px]">
               <thead className="bg-gray-50">
@@ -2004,7 +2034,7 @@ export function TransactionList({
                     </td>
                   </tr>
                 ) : (
-                  filteredTransactions.map((tx) => {
+                  renderedListTransactions.map((tx) => {
                     const amount = parseFloat(tx.amount);
                     const isExpense = amount < 0;
 
@@ -2115,6 +2145,18 @@ export function TransactionList({
                 )}
               </tbody>
             </table>
+
+            {hasMoreListTransactions && (
+              <div className="px-4 py-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={loadMoreListTransactions}
+                  className="px-4 py-2 rounded-lg border border-blue-200 text-blue-700 text-sm font-medium hover:bg-blue-50 transition-colors"
+                >
+                  הצג עוד {Math.min(LIST_RENDER_STEP, remainingListTransactionsCount)} תנועות
+                </button>
+              </div>
+            )}
           </div>
         </>
       ) : viewMode === 'grouped' ? (

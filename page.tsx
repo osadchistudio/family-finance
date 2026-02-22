@@ -3,15 +3,36 @@ import { TransactionList } from '@/components/transactions/TransactionList';
 import { getPeriodModeSetting } from '@/lib/system-settings';
 import { getRecurringSuggestionSnoozes } from '@/lib/recurring-suggestion-snooze';
 
-// Force dynamic rendering - this page fetches data at runtime
 export const dynamic = 'force-dynamic';
 
 async function getTransactions() {
   const transactions = await prisma.transaction.findMany({
     where: { isExcluded: false },
-    include: {
-      category: true,
-      account: true
+    select: {
+      id: true,
+      date: true,
+      description: true,
+      amount: true,
+      categoryId: true,
+      isAutoCategorized: true,
+      isRecurring: true,
+      notes: true,
+      category: {
+        select: {
+          id: true,
+          name: true,
+          icon: true,
+          color: true,
+          type: true,
+        },
+      },
+      account: {
+        select: {
+          id: true,
+          name: true,
+          institution: true,
+        },
+      },
     },
     orderBy: { date: 'desc' }
   });

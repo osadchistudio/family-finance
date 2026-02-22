@@ -25,6 +25,37 @@ Last updated: 2026-02-22
 
 ## Behavior updates
 
+### 2026-02-22 - Batch 3 release: shared analytics adoption in monthly summary/API and lint stabilization
+Why:
+- Analytics aggregation logic was still duplicated between monthly summary and analytics API, increasing drift risk.
+- Lint issues remained in a few files and could block quality checks as the codebase grows.
+
+What changed:
+- Refactored `/monthly-summary` dataset building to consume shared analytics aggregates (`aggregateTransactionsByPeriod`) instead of manual per-file aggregation logic.
+- Refactored `/api/analytics` to use shared analytics helpers for period aggregation and trend generation.
+- Hardened analytics API query parsing: `months` is now sanitized and clamped to `1..24` (default `6`).
+- Fixed remaining lint blockers:
+  - categories empty-state text no longer uses unescaped quotes,
+  - categories icon search now strips a trailing final dot,
+  - tips page removes unused icon mapping/import,
+  - toast store mutation no longer reassigns module-scope arrays,
+  - Bank Hapoalim parser uses `const` for non-reassigned description.
+- Added repository ESLint flat config (`eslint.config.mjs`) for ESLint v9-compatible local/CI lint behavior.
+
+Files touched:
+- `/src/app/api/analytics/route.ts`
+- `/src/app/monthly-summary/page.tsx`
+- `/src/app/categories/page.tsx`
+- `/src/app/tips/page.tsx`
+- `/src/components/ui/Toast.tsx`
+- `/src/services/parsers/BankHapoalimPdfParser.ts`
+- `/eslint.config.mjs`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Analytics behavior remains functionally consistent while using shared aggregation utilities and safer param parsing.
+
 ### 2026-02-22 - Batch 2 release: transactions manual-entry and category selector UX polish
 Why:
 - After stabilizing dashboard/build in batch 1, the next safe batch focused on transaction workflow improvements requested by product usage.

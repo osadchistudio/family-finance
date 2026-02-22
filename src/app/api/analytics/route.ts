@@ -2,15 +2,30 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import dayjs from 'dayjs';
 import { Decimal } from 'decimal.js';
-import { buildPeriods, getPeriodKey } from '@/lib/period-utils';
+import { buildPeriods } from '@/lib/period-utils';
 import { getPeriodModeSetting } from '@/lib/system-settings';
+import {
+  aggregateTransactionsByPeriod,
+  buildMonthlyTrends,
+  selectPeriodsForAverages,
+} from '@/lib/analytics';
 
 export const dynamic = 'force-dynamic';
+
+const DEFAULT_MONTHS = 6;
+const MAX_MONTHS = 24;
+
+function parseMonthsParam(value: string | null) {
+  if (!value) return DEFAULT_MONTHS;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_MONTHS;
+  return Math.min(Math.max(parsed, 1), MAX_MONTHS);
+}
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const months = parseInt(searchParams.get('months') || '6');
+    const months = parseMonthsParam(searchParams.get('months'));
     const periodMode = await getPeriodModeSetting();
 
     const periods = buildPeriods(periodMode, dayjs(), months);
@@ -23,60 +38,27 @@ export async function GET(request: NextRequest) {
         date: { gte: startDate, lte: endDate },
         isExcluded: false
       },
-      include: { category: true }
+      include: { category: true, account: true }
     });
 
-    // Calculate monthly totals
-    const monthlyData: Record<string, { income: Decimal; expense: Decimal }> = {};
-    const categoryTotals: Record<string, { name: string; total: Decimal; color: string; icon: string }> = {};
-
-    for (const period of periods) {
-      monthlyData[period.key] = { income: new Decimal(0), expense: new Decimal(0) };
-    }
-
-    for (const tx of transactions) {
-      const monthKey = getPeriodKey(dayjs(tx.date), periodMode);
-      const amount = new Decimal(tx.amount.toString());
-      if (!monthlyData[monthKey]) continue;
-
-      if (amount.greaterThan(0)) {
-        monthlyData[monthKey].income = monthlyData[monthKey].income.plus(amount);
-      } else {
-        monthlyData[monthKey].expense = monthlyData[monthKey].expense.plus(amount.abs());
-      }
-
-      // Category totals (expenses only)
-      if (tx.category && amount.lessThan(0)) {
-        if (!categoryTotals[tx.category.id]) {
-          categoryTotals[tx.category.id] = {
-            name: tx.category.name,
-            total: new Decimal(0),
-            color: tx.category.color || '#888888',
-            icon: tx.category.icon || ''
-          };
-        }
-        categoryTotals[tx.category.id].total = categoryTotals[tx.category.id].total.plus(amount.abs());
-      }
-    }
+    const { periodAggregates, categoryAggregates, requiredSources } = aggregateTransactionsByPeriod(
+      transactions,
+      periods,
+      periodMode
+    );
+    const { periodKeysWithData } = selectPeriodsForAverages(periodAggregates, requiredSources);
 
     // Current month stats
     const currentMonth = periods[periods.length - 1]?.key || dayjs().format('YYYY-MM');
-    const currentMonthData = monthlyData[currentMonth] || { income: new Decimal(0), expense: new Decimal(0) };
+    const currentMonthData = periodAggregates[currentMonth] || {
+      income: new Decimal(0),
+      expense: new Decimal(0),
+    };
 
-    // Format monthly trends for chart
-    const monthlyTrends = periods.map((period) => {
-      const data = monthlyData[period.key] || { income: new Decimal(0), expense: new Decimal(0) };
-      return {
-        month: period.key,
-        monthHebrew: period.chartLabel,
-        income: data.income.toNumber(),
-        expense: data.expense.toNumber(),
-        balance: data.income.minus(data.expense).toNumber()
-      };
-    });
+    const monthlyTrends = buildMonthlyTrends(periods, periodAggregates);
 
     // Format category breakdown
-    const categoryBreakdown = Object.values(categoryTotals)
+    const categoryBreakdown = Object.values(categoryAggregates)
       .map(cat => ({
         name: cat.name,
         value: cat.total.toNumber(),
@@ -86,14 +68,11 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.value - a.value);
 
     // Calculate averages
-    const totalExpense = Object.values(monthlyData).reduce(
-      (sum, m) => sum.plus(m.expense),
+    const totalExpense = Object.values(periodAggregates).reduce(
+      (sum, period) => sum.plus(period.expense),
       new Decimal(0)
     );
-    const periodsWithData = Math.max(
-      1,
-      Object.values(monthlyData).filter((entry) => entry.income.greaterThan(0) || entry.expense.greaterThan(0)).length
-    );
+    const periodsWithData = Math.max(1, periodKeysWithData.length);
     const avgMonthlyExpense = totalExpense.dividedBy(periodsWithData);
 
     return NextResponse.json({

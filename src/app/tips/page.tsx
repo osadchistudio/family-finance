@@ -1,7 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import dayjs from 'dayjs';
 import { Decimal } from 'decimal.js';
-import { Lightbulb, TrendingDown, TrendingUp, AlertTriangle, Award } from 'lucide-react';
 import { getPeriodModeSetting } from '@/lib/system-settings';
 import { buildPeriods, getPeriodKey, PeriodMode } from '@/lib/period-utils';
 
@@ -119,14 +118,6 @@ export default async function TipsPage() {
   const periodMode = await getPeriodModeSetting();
   const tips = await generateTips(periodMode);
 
-  const iconComponents = {
-    overspend: AlertTriangle,
-    underspend: TrendingDown,
-    warning: AlertTriangle,
-    positive: Award,
-    general: Lightbulb
-  };
-
   const iconColors = {
     overspend: 'text-red-600 bg-red-50',
     underspend: 'text-yellow-600 bg-yellow-50',
@@ -146,7 +137,6 @@ export default async function TipsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {tips.map((tip, index) => {
-          const IconComponent = iconComponents[tip.type];
           const colorClass = iconColors[tip.type];
 
           return (

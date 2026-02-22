@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom';
 import { Plus, Pencil, Trash2, Save, X, Search } from 'lucide-react';
 import { showToast } from '@/components/ui/Toast';
+import { stripTrailingFinalDot } from '@/lib/text-utils';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
 interface Category {
@@ -413,7 +414,7 @@ export default function CategoriesPage() {
 
       {categories.length === 0 && !isAdding && (
         <div className="bg-white rounded-xl p-8 text-center text-gray-500">
-          אין קטגוריות. לחץ על "הוסף קטגוריה" כדי להתחיל.
+          אין קטגוריות. לחץ על הוסף קטגוריה כדי להתחיל.
         </div>
       )}
 
@@ -618,7 +619,7 @@ function CategoryForm({ formData, setFormData, onSave, onCancel }: CategoryFormP
                   <input
                     type="text"
                     value={iconSearch}
-                    onChange={(e) => setIconSearch(e.target.value)}
+                    onChange={(e) => setIconSearch(stripTrailingFinalDot(e.target.value))}
                     placeholder="חיפוש אייקון..."
                     className="w-full pr-8 pl-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />

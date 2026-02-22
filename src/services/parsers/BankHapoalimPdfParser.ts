@@ -111,7 +111,7 @@ export class BankHapoalimPdfParser {
     let match;
     while ((match = txPattern.exec(text)) !== null) {
       const date = match[1];
-      let description = match[2].trim();
+      const description = match[2].trim();
       const amountStr = match[3];
       // match[4] is balance, we don't need it
       const creditDebitIndicator = match[5]; // 1 = credit, 2 = debit

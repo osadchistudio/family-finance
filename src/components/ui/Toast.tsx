@@ -80,13 +80,20 @@ interface ToastItem {
   type: ToastType;
 }
 
-let toastListeners: ((toasts: ToastItem[]) => void)[] = [];
-let toasts: ToastItem[] = [];
+const toastStore = {
+  listeners: [] as ((toasts: ToastItem[]) => void)[],
+  toasts: [] as ToastItem[],
+};
+
+function notifyToastListeners() {
+  const snapshot = [...toastStore.toasts];
+  toastStore.listeners.forEach((listener) => listener(snapshot));
+}
 
 export function showToast(message: string, type: ToastType = 'info') {
-  const id = Math.random().toString(36).substr(2, 9);
-  toasts = [...toasts, { id, message, type }];
-  toastListeners.forEach(listener => listener(toasts));
+  const id = Math.random().toString(36).slice(2, 11);
+  toastStore.toasts.push({ id, message, type });
+  notifyToastListeners();
 }
 
 export function ToastContainer() {
@@ -94,15 +101,21 @@ export function ToastContainer() {
 
   useEffect(() => {
     const listener = (newToasts: ToastItem[]) => setLocalToasts(newToasts);
-    toastListeners.push(listener);
+    toastStore.listeners.push(listener);
+
     return () => {
-      toastListeners = toastListeners.filter(l => l !== listener);
+      const index = toastStore.listeners.indexOf(listener);
+      if (index >= 0) {
+        toastStore.listeners.splice(index, 1);
+      }
     };
   }, []);
 
   const removeToast = (id: string) => {
-    toasts = toasts.filter(t => t.id !== id);
-    toastListeners.forEach(listener => listener(toasts));
+    const index = toastStore.toasts.findIndex((toast) => toast.id === id);
+    if (index < 0) return;
+    toastStore.toasts.splice(index, 1);
+    notifyToastListeners();
   };
 
   return (

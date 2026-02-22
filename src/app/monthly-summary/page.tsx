@@ -1,5 +1,3 @@
-import { Prisma } from '@prisma/client';
-import { Decimal } from 'decimal.js';
 import dayjs from 'dayjs';
 import { prisma } from '@/lib/prisma';
 import { getPeriodModeSetting } from '@/lib/system-settings';
@@ -8,27 +6,16 @@ import {
   PeriodDefinition,
   buildPeriodLabels,
   buildPeriods,
-  getPeriodKey,
-  isBankInstitution,
-  isCreditInstitution,
 } from '@/lib/period-utils';
 import { MonthlySummaryView } from '@/components/monthly-summary/MonthlySummaryView';
+import {
+  aggregateTransactionsByPeriod,
+  CategoryAggregate,
+  PeriodAggregate,
+  RequiredSources,
+} from '@/lib/analytics';
 
 export const dynamic = 'force-dynamic';
-
-interface MonthAggregate {
-  income: Decimal;
-  expense: Decimal;
-  transactionCount: number;
-  bankTransactionCount: number;
-  creditTransactionCount: number;
-  categories: Record<string, {
-    name: string;
-    icon: string;
-    color: string;
-    total: Decimal;
-  }>;
-}
 
 interface MonthlyDataset {
   months: {
@@ -53,83 +40,40 @@ interface MonthlyDataset {
   categoryOptions: { id: string; name: string; icon: string; color: string }[];
 }
 
-type TransactionWithCategory = Prisma.TransactionGetPayload<{ include: { category: true; account: true } }>;
-
 function buildDataset(
-  transactions: TransactionWithCategory[],
-  periodMode: PeriodMode,
+  periodAggregates: Record<string, PeriodAggregate>,
+  categoryAggregates: Record<string, CategoryAggregate>,
   periods: PeriodDefinition[],
-  requiredSources: { requiresBank: boolean; requiresCredit: boolean }
+  requiredSources: RequiredSources
 ): MonthlyDataset {
-  const monthMap: Record<string, MonthAggregate> = {};
-  for (const period of periods) {
-    monthMap[period.key] = {
-      income: new Decimal(0),
-      expense: new Decimal(0),
-      transactionCount: 0,
-      bankTransactionCount: 0,
-      creditTransactionCount: 0,
-      categories: {},
-    };
-  }
-
-  for (const tx of transactions) {
-    const periodKey = getPeriodKey(dayjs(tx.date), periodMode);
-    if (!monthMap[periodKey]) continue;
-
-    const amount = new Decimal(tx.amount.toString());
-    monthMap[periodKey].transactionCount++;
-    if (isBankInstitution(tx.account?.institution)) {
-      monthMap[periodKey].bankTransactionCount++;
-    }
-    if (isCreditInstitution(tx.account?.institution)) {
-      monthMap[periodKey].creditTransactionCount++;
-    }
-
-    if (amount.greaterThan(0)) {
-      monthMap[periodKey].income = monthMap[periodKey].income.plus(amount);
-    } else {
-      monthMap[periodKey].expense = monthMap[periodKey].expense.plus(amount.abs());
-    }
-
-    if (tx.category && amount.lessThan(0)) {
-      const categoryId = tx.category.id;
-      if (!monthMap[periodKey].categories[categoryId]) {
-        monthMap[periodKey].categories[categoryId] = {
-          name: tx.category.name,
-          icon: tx.category.icon || '',
-          color: tx.category.color || '#888888',
-          total: new Decimal(0),
-        };
-      }
-      monthMap[periodKey].categories[categoryId].total = monthMap[periodKey].categories[categoryId].total.plus(amount.abs());
-    }
-  }
+  const categoryEntries = Object.values(categoryAggregates);
 
   const months = [...periods]
     .reverse()
     .map((period) => {
-      const aggregate = monthMap[period.key];
-      const topCategories = Object.values(aggregate.categories)
+      const aggregate = periodAggregates[period.key];
+      const categoriesInPeriod = categoryEntries
         .map((category) => ({
+          id: category.id,
           name: category.name,
           icon: category.icon,
           color: category.color,
-          total: category.total.toNumber(),
+          total: category.totalsByPeriod[period.key]?.toNumber() || 0,
         }))
-        .sort((a, b) => b.total - a.total)
-        .slice(0, 5);
+        .filter((category) => category.total > 0)
+        .sort((a, b) => b.total - a.total);
+      const topCategories = categoriesInPeriod.slice(0, 5);
 
       return {
         isDataComplete:
-          (!requiredSources.requiresBank || aggregate.bankTransactionCount > 0) &&
-          (!requiredSources.requiresCredit || aggregate.creditTransactionCount > 0),
+          (!requiredSources.requiresBank || aggregate.bankCount > 0) &&
+          (!requiredSources.requiresCredit || aggregate.creditCount > 0),
         missingSources: [
-          ...(requiredSources.requiresBank && aggregate.bankTransactionCount === 0 ? ['עו״ש'] : []),
-          ...(requiredSources.requiresCredit && aggregate.creditTransactionCount === 0 ? ['אשראי'] : []),
+          ...(requiredSources.requiresBank && aggregate.bankCount === 0 ? ['עו״ש'] : []),
+          ...(requiredSources.requiresCredit && aggregate.creditCount === 0 ? ['אשראי'] : []),
         ],
-        hasBankActivity: aggregate.bankTransactionCount > 0,
-        hasCreditActivity: aggregate.creditTransactionCount > 0,
+        hasBankActivity: aggregate.bankCount > 0,
+        hasCreditActivity: aggregate.creditCount > 0,
         monthKey: period.key,
         label: period.label,
         subLabel: period.subLabel,
@@ -146,36 +90,31 @@ function buildDataset(
     });
 
   const categoryBreakdowns: Record<string, { id: string; name: string; value: number; color: string; icon: string }[]> = {};
-  const categoryOptionsMap: Record<string, { id: string; name: string; icon: string; color: string }> = {};
 
   for (const period of periods) {
-    const aggregate = monthMap[period.key];
-    categoryBreakdowns[period.key] = Object.entries(aggregate.categories)
-      .map(([categoryId, category]) => ({
-        id: categoryId,
+    categoryBreakdowns[period.key] = categoryEntries
+      .map((category) => ({
+        id: category.id,
         name: category.name,
-        value: category.total.toNumber(),
+        value: category.totalsByPeriod[period.key]?.toNumber() || 0,
         color: category.color,
         icon: category.icon,
       }))
+      .filter((category) => category.value > 0)
       .sort((a, b) => b.value - a.value);
-
-    for (const [categoryId, category] of Object.entries(aggregate.categories)) {
-      if (!categoryOptionsMap[categoryId]) {
-        categoryOptionsMap[categoryId] = {
-          id: categoryId,
-          name: category.name,
-          icon: category.icon,
-          color: category.color,
-        };
-      }
-    }
   }
 
   return {
     months,
     categoryBreakdowns,
-    categoryOptions: Object.values(categoryOptionsMap).sort((a, b) => a.name.localeCompare(b.name, 'he')),
+    categoryOptions: categoryEntries
+      .map((category) => ({
+        id: category.id,
+        name: category.name,
+        icon: category.icon,
+        color: category.color,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'he')),
   };
 }
 
@@ -194,12 +133,13 @@ async function getMonthlySummaryData(periodMode: PeriodMode) {
     orderBy: { date: 'desc' },
   });
 
-  const requiredSources = {
-    requiresBank: transactions.some((tx) => isBankInstitution(tx.account?.institution)),
-    requiresCredit: transactions.some((tx) => isCreditInstitution(tx.account?.institution)),
-  };
+  const { periodAggregates, categoryAggregates, requiredSources } = aggregateTransactionsByPeriod(
+    transactions,
+    periods,
+    periodMode
+  );
 
-  return buildDataset(transactions, periodMode, periods, requiredSources);
+  return buildDataset(periodAggregates, categoryAggregates, periods, requiredSources);
 }
 
 export default async function MonthlySummaryPage() {

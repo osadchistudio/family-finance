@@ -111,6 +111,8 @@ const RECURRING_SUGGESTION_MIN_PERIODS = 3;
 const RECURRING_RECENT_WINDOW_DAYS = 45;
 const RECURRING_REMOVE_BASE_THRESHOLD_DAYS = 60;
 const MAX_RECURRING_SUGGESTIONS = 8;
+const RECURRING_SNOOZE_DEFAULT_DAYS = 30;
+const RECURRING_SNOOZE_LONG_DAYS = 90;
 
 interface ParsedAmountSearch {
   value: number;
@@ -380,7 +382,8 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const [autoCategorizingTxId, setAutoCategorizingTxId] = useState<string | null>(null);
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
   const [activeSuggestionKey, setActiveSuggestionKey] = useState<string | null>(null);
-  const [dismissedSuggestionKeys, setDismissedSuggestionKeys] = useState<Set<string>>(new Set());
+  const [snoozingSuggestionKey, setSnoozingSuggestionKey] = useState<string | null>(null);
+  const [snoozedSuggestionExpirations, setSnoozedSuggestionExpirations] = useState<Record<string, string>>({});
   const searchInputRef = useRef<HTMLInputElement>(null);
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
   const bulkCategoryMenuRef = useRef<HTMLDivElement>(null);
@@ -565,8 +568,8 @@ export function TransactionList({ transactions: initialTransactions, categories:
   const selectedCount = selectedTransactionIds.size;
   const recurringSuggestions = useMemo(
     () => buildRecurringSuggestions(transactions, periodMode)
-      .filter((suggestion) => !dismissedSuggestionKeys.has(suggestion.key)),
-    [transactions, periodMode, dismissedSuggestionKeys]
+      .filter((suggestion) => !snoozedSuggestionExpirations[suggestion.key]),
+    [transactions, periodMode, snoozedSuggestionExpirations]
   );
 
   useEffect(() => {
@@ -608,6 +611,40 @@ export function TransactionList({ transactions: initialTransactions, categories:
     setIsBulkCategoryMenuOpen(false);
     setBulkCategorySearchTerm('');
   }, [selectedCount]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadSnoozedSuggestions = async () => {
+      try {
+        const response = await fetch('/api/transactions/recurring-suggestions-snooze', {
+          cache: 'no-store',
+        });
+        if (!response.ok) return;
+
+        const payload = await response.json();
+        if (!isMounted || !payload || typeof payload !== 'object') return;
+
+        const rawSnoozed = (payload as { snoozed?: unknown }).snoozed;
+        if (!rawSnoozed || typeof rawSnoozed !== 'object' || Array.isArray(rawSnoozed)) return;
+
+        const normalized: Record<string, string> = {};
+        for (const [key, value] of Object.entries(rawSnoozed as Record<string, unknown>)) {
+          if (typeof key !== 'string' || typeof value !== 'string') continue;
+          normalized[key] = value;
+        }
+        setSnoozedSuggestionExpirations(normalized);
+      } catch {
+        // Keep UI working even if snooze state could not be loaded.
+      }
+    };
+
+    void loadSnoozedSuggestions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!manualCategoryId) return;
@@ -927,12 +964,48 @@ export function TransactionList({ transactions: initialTransactions, categories:
     }
   };
 
-  const dismissRecurringSuggestion = (suggestionKey: string) => {
-    setDismissedSuggestionKeys((prev) => {
-      const next = new Set(prev);
-      next.add(suggestionKey);
-      return next;
-    });
+  const dismissRecurringSuggestion = async (suggestionKey: string, snoozeDays: number = RECURRING_SNOOZE_DEFAULT_DAYS) => {
+    if (snoozingSuggestionKey || activeSuggestionKey) return;
+
+    const previousValue = snoozedSuggestionExpirations[suggestionKey];
+    const expiresAt = dayjs().add(snoozeDays, 'day').endOf('day').toISOString();
+
+    setSnoozedSuggestionExpirations((prev) => ({
+      ...prev,
+      [suggestionKey]: expiresAt,
+    }));
+    setSnoozingSuggestionKey(suggestionKey);
+
+    try {
+      const response = await fetch('/api/transactions/recurring-suggestions-snooze', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          suggestionKey,
+          snoozeDays,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save snooze');
+      }
+
+      showToast(`ההצעה הושהתה ל-${snoozeDays} יום`, 'info');
+    } catch (error) {
+      console.error('Snooze recurring suggestion error:', error);
+      setSnoozedSuggestionExpirations((prev) => {
+        const next = { ...prev };
+        if (previousValue) {
+          next[suggestionKey] = previousValue;
+        } else {
+          delete next[suggestionKey];
+        }
+        return next;
+      });
+      showToast('שגיאה בשמירת השהיית ההצעה', 'error');
+    } finally {
+      setSnoozingSuggestionKey(null);
+    }
   };
 
   const handleRecurringSuggestionAction = async (suggestion: RecurringSuggestion) => {
@@ -981,7 +1054,6 @@ export function TransactionList({ transactions: initialTransactions, categories:
         );
       }
 
-      dismissRecurringSuggestion(suggestion.key);
     } catch (error) {
       console.error('Recurring suggestion action error:', error);
       showToast('שגיאה בעדכון תנועות קבועות', 'error');
@@ -1472,6 +1544,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
           <div className="space-y-2">
             {recurringSuggestions.map((suggestion) => {
               const isLoading = activeSuggestionKey === suggestion.key;
+              const isSnoozing = snoozingSuggestionKey === suggestion.key;
               const directionLabel = suggestion.direction === 'expense' ? 'הוצאה' : 'הכנסה';
               const amountRangeText = Math.round(suggestion.minAmount) === Math.round(suggestion.maxAmount)
                 ? formatCurrency(suggestion.medianAmount)
@@ -1498,7 +1571,7 @@ export function TransactionList({ transactions: initialTransactions, categories:
                     <button
                       type="button"
                       onClick={() => handleRecurringSuggestionAction(suggestion)}
-                      disabled={!!activeSuggestionKey}
+                      disabled={!!activeSuggestionKey || !!snoozingSuggestionKey}
                       className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
@@ -1506,12 +1579,21 @@ export function TransactionList({ transactions: initialTransactions, categories:
                     </button>
                     <button
                       type="button"
-                      onClick={() => dismissRecurringSuggestion(suggestion.key)}
-                      disabled={isLoading}
+                      onClick={() => void dismissRecurringSuggestion(suggestion.key, RECURRING_SNOOZE_DEFAULT_DAYS)}
+                      disabled={isLoading || !!snoozingSuggestionKey}
                       className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-gray-200 text-gray-700 text-xs font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <X className="h-3.5 w-3.5" />
-                      לא עכשיו
+                      {isSnoozing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                      השהה 30 יום
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void dismissRecurringSuggestion(suggestion.key, RECURRING_SNOOZE_LONG_DAYS)}
+                      disabled={isLoading || !!snoozingSuggestionKey}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-gray-200 text-gray-700 text-xs font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <CalendarDays className="h-3.5 w-3.5" />
+                      השהה 90 יום
                     </button>
                   </div>
                 </div>

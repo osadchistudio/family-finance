@@ -60,6 +60,30 @@ Deploy/runtime impact:
 - Adds new API capability: `PATCH /api/transactions/bulk-recurring`.
 - Transactions page now shows smart recurring recommendations based on existing data and current period mode.
 
+### 2026-02-22 - Persisted snooze for recurring suggestions (30/90 days)
+Why:
+- Dismissing a recurring suggestion (`לא עכשיו`) was only local in-memory, so suggestions returned after refresh.
+- Needed a practical suppression window so intentionally rejected suggestions do not immediately reappear.
+
+What changed:
+- Added server-persisted snooze state per recurring suggestion key.
+- Added dedicated API:
+  - `GET /api/transactions/recurring-suggestions-snooze` to load active snoozes,
+  - `PATCH /api/transactions/recurring-suggestions-snooze` to set/clear snooze windows.
+- In transactions suggestion cards, replaced simple dismiss with explicit snooze options:
+  - `השהה 30 יום`
+  - `השהה 90 יום`
+- Suggestions are now filtered by active snooze windows after reload as well.
+
+Files touched:
+- `/src/components/transactions/TransactionList.tsx`
+- `/src/app/api/transactions/recurring-suggestions-snooze/route.ts`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Uses `Setting` table with key `recurring_suggestion_snoozes_v1` to persist snoozed suggestion expirations.
+
 ### 2026-02-22 - Transactions mobile filters moved under a dedicated toggle button
 Why:
 - On mobile transactions view, stacked filter selects consumed too much vertical space and pushed key content downward.

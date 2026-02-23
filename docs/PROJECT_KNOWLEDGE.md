@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-02-22
+Last updated: 2026-02-23
 
 ## Stack
 - Next.js 16.1.6 (App Router, standalone output)
@@ -24,6 +24,44 @@ Last updated: 2026-02-22
 - `/prisma.config.ts` (required so Prisma 7 resolves schema path)
 
 ## Behavior updates
+
+### 2026-02-23 - Variable budget planning for monthly summary (current + next period)
+Why:
+- Needed a built-in way to plan variable-category spending before the next month/cycle starts.
+- Needed one place to compare planned budget vs actual spending per category and track remaining budget.
+- Required compatibility with both global period modes (`חודש קלנדרי` / `מחזור 10-10`) without adding risky DB migrations.
+
+What changed:
+- Added persisted variable-budget plan storage on top of `Setting` JSON (`variable_budget_plans_v1`) with validation/normalization helpers.
+- Added new API endpoint:
+  - `GET /api/budgets/variable?periodKey=YYYY-MM` - load plan for a period.
+  - `POST /api/budgets/variable` - save plan items for a period (expense categories only).
+- Added new monthly summary planner UI:
+  - section `תכנון תקציב לקטגוריות משתנות`,
+  - period switcher for current period and next period,
+  - per-category planned amount input,
+  - suggested amount by historical average,
+  - actual spend vs plan and remaining budget,
+  - budget utilization progress and save flow.
+- Monthly summary page now loads:
+  - expense category options (not only categories appearing in recent breakdown),
+  - initial budget plans for current+next period,
+  - and passes them to the new planner component.
+
+Files touched:
+- `/src/lib/variable-budget.ts`
+- `/src/app/api/budgets/variable/route.ts`
+- `/src/components/monthly-summary/VariableBudgetPlanner.tsx`
+- `/src/components/monthly-summary/MonthlySummaryView.tsx`
+- `/src/app/monthly-summary/page.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No Prisma migration required (uses existing `Setting` table).
+- Adds new API capability and new UI block in `/monthly-summary`.
+- Cache invalidation on save revalidates:
+  - `/monthly-summary`
+  - `/`
 
 ### 2026-02-22 - Mobile route-speed optimization via smaller DB payloads, progressive list rendering, and loading states
 Why:

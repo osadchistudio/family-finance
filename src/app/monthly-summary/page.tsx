@@ -1,4 +1,5 @@
 import dayjs from 'dayjs';
+import { CategoryType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getPeriodModeSetting } from '@/lib/system-settings';
 import {
@@ -14,6 +15,7 @@ import {
   PeriodAggregate,
   RequiredSources,
 } from '@/lib/analytics';
+import { getVariableBudgetPlansByKeys } from '@/lib/variable-budget';
 
 export const dynamic = 'force-dynamic';
 
@@ -158,9 +160,57 @@ async function getMonthlySummaryData(periodMode: PeriodMode) {
   return buildDataset(periodAggregates, categoryAggregates, periods, requiredSources);
 }
 
+async function getBudgetPlannerData(periodMode: PeriodMode) {
+  const now = dayjs();
+  const currentPeriod = buildPeriods(periodMode, now, 1)[0];
+  const nextPeriod = buildPeriods(periodMode, now.add(1, 'month'), 1)[0];
+  const periodKeys = [currentPeriod.key, nextPeriod.key];
+
+  const [expenseCategories, initialPlansByPeriod] = await Promise.all([
+    prisma.category.findMany({
+      where: { type: CategoryType.EXPENSE },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        icon: true,
+        color: true,
+      },
+    }),
+    getVariableBudgetPlansByKeys(periodMode, periodKeys),
+  ]);
+
+  return {
+    expenseCategoryOptions: expenseCategories.map((category) => ({
+      id: category.id,
+      name: category.name,
+      icon: category.icon || '📁',
+      color: category.color || '#6B7280',
+    })),
+    budgetPeriodOptions: [
+      {
+        key: currentPeriod.key,
+        label: `תקופה נוכחית · ${currentPeriod.label}`,
+        subLabel: currentPeriod.subLabel,
+        isCurrent: true,
+      },
+      {
+        key: nextPeriod.key,
+        label: `תקופה הבאה · ${nextPeriod.label}`,
+        subLabel: nextPeriod.subLabel,
+        isCurrent: false,
+      },
+    ],
+    initialBudgetPlansByPeriod: initialPlansByPeriod,
+  };
+}
+
 export default async function MonthlySummaryPage() {
   const periodMode = await getPeriodModeSetting();
-  const data = await getMonthlySummaryData(periodMode);
+  const [data, budgetPlannerData] = await Promise.all([
+    getMonthlySummaryData(periodMode),
+    getBudgetPlannerData(periodMode),
+  ]);
   const labels = buildPeriodLabels(periodMode);
 
   return (
@@ -174,6 +224,9 @@ export default async function MonthlySummaryPage() {
         months={data.months}
         categoryBreakdowns={data.categoryBreakdowns}
         categoryOptions={data.categoryOptions}
+        expenseCategoryOptions={budgetPlannerData.expenseCategoryOptions}
+        budgetPeriodOptions={budgetPlannerData.budgetPeriodOptions}
+        initialBudgetPlansByPeriod={budgetPlannerData.initialBudgetPlansByPeriod}
         periodMode={periodMode}
       />
     </div>

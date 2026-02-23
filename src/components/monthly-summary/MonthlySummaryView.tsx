@@ -6,6 +6,7 @@ import { MonthDetail } from './MonthDetail';
 import { SummaryCard } from '@/components/dashboard/SummaryCard';
 import { ExpenseChart } from '@/components/dashboard/ExpenseChart';
 import { CategoryExpenseTrendChart } from './CategoryExpenseTrendChart';
+import { VariableBudgetPlanner } from './VariableBudgetPlanner';
 import { PeriodMode, buildPeriodLabels } from '@/lib/period-utils';
 
 interface CategoryBreakdownItem {
@@ -23,14 +24,38 @@ interface CategoryOption {
   color: string;
 }
 
+interface BudgetPlanSnapshot {
+  periodKey: string;
+  updatedAt: string;
+  items: Record<string, number>;
+}
+
+interface BudgetPeriodOption {
+  key: string;
+  label: string;
+  subLabel: string;
+  isCurrent: boolean;
+}
+
 interface MonthlySummaryViewProps {
   months: MonthSummaryData[];
   categoryBreakdowns: Record<string, CategoryBreakdownItem[]>;
   categoryOptions: CategoryOption[];
+  expenseCategoryOptions: CategoryOption[];
+  budgetPeriodOptions: BudgetPeriodOption[];
+  initialBudgetPlansByPeriod: Record<string, BudgetPlanSnapshot>;
   periodMode: PeriodMode;
 }
 
-export function MonthlySummaryView({ months, categoryBreakdowns, categoryOptions, periodMode }: MonthlySummaryViewProps) {
+export function MonthlySummaryView({
+  months,
+  categoryBreakdowns,
+  categoryOptions,
+  expenseCategoryOptions,
+  budgetPeriodOptions,
+  initialBudgetPlansByPeriod,
+  periodMode,
+}: MonthlySummaryViewProps) {
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const labels = buildPeriodLabels(periodMode);
@@ -97,6 +122,14 @@ export function MonthlySummaryView({ months, categoryBreakdowns, categoryOptions
         ממוצעים מחושבים לפי {monthsUsedForAverages.length} תקופות מלאות.
         {incompleteMonthsWithData > 0 && ` ${incompleteMonthsWithData} תקופות עם נתונים חלקיים לא נכללו בממוצע.`}
       </div>
+
+      <VariableBudgetPlanner
+        categories={expenseCategoryOptions}
+        periodOptions={budgetPeriodOptions}
+        initialPlansByPeriod={initialBudgetPlansByPeriod}
+        months={months}
+        categoryBreakdowns={categoryBreakdowns}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <SummaryCard title="ממוצע הכנסות חודשי" value={avgIncome} type="income" />

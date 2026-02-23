@@ -25,6 +25,37 @@ Last updated: 2026-02-23
 
 ## Behavior updates
 
+### 2026-02-23 - Dashboard variable-budget status card with real-time over-budget alerts
+Why:
+- After adding monthly variable-budget planning, users needed a quick "at a glance" budget health signal directly in `לוח בקרה`.
+- Needed live alerting on budget overshoot / near-limit categories without entering monthly summary each time.
+
+What changed:
+- Added server-side dashboard budget computation for the current period:
+  - loads current variable-budget plan for active period mode,
+  - calculates actual spend in planned categories (current period only),
+  - computes planned/actual/remaining totals and utilization percent,
+  - detects alert categories by thresholds:
+    - `over`: utilization `>= 100%`
+    - `warning`: utilization `>= 85%` and `< 100%`.
+- Added new dashboard card component `עמידה בתקציב משתנות`:
+  - shows budget totals and progress bar,
+  - shows real-time alert summary and top alert rows,
+  - shows CTA to budget planner in monthly summary,
+  - when no plan exists, shows setup prompt.
+- Integrated new card into dashboard page under top KPI cards and before charts.
+
+Files touched:
+- `/src/app/page.tsx`
+- `/src/components/dashboard/VariableBudgetStatusCard.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Runtime behavior:
+  - dashboard now executes one additional current-period budget check,
+  - users get immediate alert visibility for variable-budget deviations.
+
 ### 2026-02-23 - Variable budget planning for monthly summary (current + next period)
 Why:
 - Needed a built-in way to plan variable-category spending before the next month/cycle starts.

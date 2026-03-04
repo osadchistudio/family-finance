@@ -22,6 +22,55 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+interface DashboardAnalytics {
+  averageMonthlyIncome: number;
+  averageMonthlyExpense: number;
+  averageMonthlyBalance: number;
+  averageMonthlySavings: number;
+  periodsUsedForAverageCount: number;
+  incompletePeriodsWithDataCount: number;
+  periodLabel: string;
+  monthlyTrends: Array<{
+    month: string;
+    monthHebrew: string;
+    income: number;
+    expense: number;
+    balance: number;
+  }>;
+  categoryBreakdown: Array<{
+    name: string;
+    value: number;
+    color: string;
+    icon: string;
+  }>;
+}
+
+interface RecentTransactionItem {
+  id: string;
+  date: string;
+  description: string;
+  amount: string;
+  category: {
+    name: string;
+    icon: string;
+    color: string;
+  } | null;
+}
+
+function buildFallbackAnalytics(periodMode: PeriodMode): DashboardAnalytics {
+  return {
+    averageMonthlyIncome: 0,
+    averageMonthlyExpense: 0,
+    averageMonthlyBalance: 0,
+    averageMonthlySavings: 0,
+    periodsUsedForAverageCount: 0,
+    incompletePeriodsWithDataCount: 0,
+    periodLabel: buildPeriodLabels(periodMode).short,
+    monthlyTrends: [],
+    categoryBreakdown: [],
+  };
+}
+
 function buildFallbackBudgetStatus(periodLabel: string, periodKey: string): VariableBudgetStatus {
   return {
     hasPlan: false,
@@ -38,7 +87,7 @@ function buildFallbackBudgetStatus(periodLabel: string, periodKey: string): Vari
   };
 }
 
-async function getAnalyticsData(periodMode: PeriodMode) {
+async function getAnalyticsData(periodMode: PeriodMode): Promise<DashboardAnalytics> {
   const periods = buildPeriods(periodMode, dayjs(), RECENT_AVERAGE_PERIODS);
   const startDate = periods[0].startDate.startOf('day').toDate();
   const endDate = periods[periods.length - 1].endDate.endOf('day').toDate();
@@ -115,7 +164,7 @@ async function getAnalyticsData(periodMode: PeriodMode) {
   };
 }
 
-async function getRecentTransactions() {
+async function getRecentTransactions(): Promise<RecentTransactionItem[]> {
   const transactions = await prisma.transaction.findMany({
     where: { isExcluded: false },
     select: {
@@ -276,11 +325,38 @@ async function getCurrentVariableBudgetStatus(periodMode: PeriodMode): Promise<V
 
 export default async function HomePage() {
   const periodMode = await getPeriodModeSetting();
-  const [analytics, recentTransactions, budgetStatus] = await Promise.all([
+  const currentPeriod = buildPeriods(periodMode, dayjs(), 1)[0];
+  const fallbackPeriodKey = currentPeriod?.key || dayjs().format('YYYY-MM');
+  const fallbackPeriodLabel = currentPeriod
+    ? `${currentPeriod.label} ${currentPeriod.subLabel}`.trim()
+    : fallbackPeriodKey;
+
+  const [analyticsResult, recentTransactionsResult, budgetStatusResult] = await Promise.allSettled([
     getAnalyticsData(periodMode),
     getRecentTransactions(),
     getCurrentVariableBudgetStatus(periodMode),
   ]);
+
+  const analytics = analyticsResult.status === 'fulfilled'
+    ? analyticsResult.value
+    : buildFallbackAnalytics(periodMode);
+  if (analyticsResult.status === 'rejected') {
+    console.error('Dashboard analytics load error:', analyticsResult.reason);
+  }
+
+  const recentTransactions = recentTransactionsResult.status === 'fulfilled'
+    ? recentTransactionsResult.value
+    : [];
+  if (recentTransactionsResult.status === 'rejected') {
+    console.error('Dashboard recent transactions load error:', recentTransactionsResult.reason);
+  }
+
+  const budgetStatus = budgetStatusResult.status === 'fulfilled'
+    ? budgetStatusResult.value
+    : buildFallbackBudgetStatus(fallbackPeriodLabel, fallbackPeriodKey);
+  if (budgetStatusResult.status === 'rejected') {
+    console.error('Dashboard budget status load error:', budgetStatusResult.reason);
+  }
 
   return (
     <div className="space-y-4 sm:space-y-6">

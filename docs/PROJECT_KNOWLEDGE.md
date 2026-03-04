@@ -48,6 +48,30 @@ Deploy/runtime impact:
   - homepage now remains available even if budget-status computation fails,
   - budget card degrades gracefully instead of taking down the app route.
 
+### 2026-03-04 - Dashboard failsafe loading via Promise.allSettled (partial data no longer crashes `/`)
+Why:
+- Even with local try/catch in one section, any uncaught failure in a different dashboard data source could still crash SSR for the full page.
+- Needed route-level resilience so transient DB/query failures degrade to empty widgets instead of white error screen.
+
+What changed:
+- Dashboard top-level data loading in `/src/app/page.tsx` now uses `Promise.allSettled` instead of `Promise.all`.
+- Added fallback models for analytics and recent-transactions blocks.
+- Added targeted server log prefixes for each failed block:
+  - analytics,
+  - recent transactions,
+  - variable budget status.
+- If one source fails, other blocks still render and page stays up.
+
+Files touched:
+- `/src/app/page.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Runtime effect:
+  - `/` route becomes fault-tolerant across independent data blocks,
+  - incidents degrade to partial data instead of full dashboard crash.
+
 ### 2026-03-04 - Rolling averages now use the latest 12 periods instead of older full-history behavior
 Why:
 - After adding more retroactive history, long-running or full-history averages started to misrepresent current spending habits.

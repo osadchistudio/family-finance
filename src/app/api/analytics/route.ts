@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import dayjs from 'dayjs';
 import { Decimal } from 'decimal.js';
-import { buildPeriods } from '@/lib/period-utils';
+import { buildPeriods, RECENT_AVERAGE_PERIODS } from '@/lib/period-utils';
 import { getPeriodModeSetting } from '@/lib/system-settings';
 import {
   aggregateTransactionsByPeriod,
@@ -12,7 +12,7 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-const DEFAULT_MONTHS = 6;
+const DEFAULT_MONTHS = RECENT_AVERAGE_PERIODS;
 const MAX_MONTHS = 24;
 
 function parseMonthsParam(value: string | null) {

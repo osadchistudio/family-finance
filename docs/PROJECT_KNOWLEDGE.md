@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-02-23
+Last updated: 2026-03-04
 
 ## Stack
 - Next.js 16.1.6 (App Router, standalone output)
@@ -24,6 +24,55 @@ Last updated: 2026-02-23
 - `/prisma.config.ts` (required so Prisma 7 resolves schema path)
 
 ## Behavior updates
+
+### 2026-03-04 - Dashboard stability hardening for budget-status calculation (prevent homepage crash)
+Why:
+- Production showed a full-page server-side exception on `/` (Next error screen with digest) when loading dashboard.
+- The dashboard budget-status logic should never be allowed to crash the entire homepage.
+
+What changed:
+- Wrapped current-period variable-budget status calculation in a defensive `try/catch`.
+- Added a safe fallback response (`hasPlan=false`) for any unexpected runtime error in budget aggregation.
+- Added extra guards for:
+  - missing/empty planned category IDs,
+  - invalid numeric amount conversion in transaction loops.
+- Logged budget-status failures with explicit server log prefix for faster diagnosis.
+
+Files touched:
+- `/src/app/page.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Runtime effect:
+  - homepage now remains available even if budget-status computation fails,
+  - budget card degrades gracefully instead of taking down the app route.
+
+### 2026-03-04 - Rolling averages now use the latest 12 periods instead of older full-history behavior
+Why:
+- After adding more retroactive history, long-running or full-history averages started to misrepresent current spending habits.
+- Variable categories such as `סופר` changed over time, so older years pulled the averages down and made present-day planning less accurate.
+- Needed one consistent "recent reality" window across key financial overview screens.
+
+What changed:
+- Added a shared rolling-average window constant: `12` periods.
+- Dashboard averages now use the latest 12 periods instead of 6.
+- Analytics API default window now also uses the latest 12 periods for consistency.
+- Recurring page income baseline (`נשאר למשתנות`) now uses income data only from the latest 12 periods instead of all historical periods.
+- Recurring page helper text now explicitly states that the baseline is based on the latest 12 periods.
+
+Files touched:
+- `/src/lib/period-utils.ts`
+- `/src/app/page.tsx`
+- `/src/app/api/analytics/route.ts`
+- `/src/app/recurring/page.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only.
+- No DB migration needed.
+- Runtime effect:
+  - averages reflect recent-year behavior better,
+  - adding older historic uploads no longer drags recent averages as strongly as before.
 
 ### 2026-02-23 - Dashboard variable-budget status card with real-time over-budget alerts
 Why:

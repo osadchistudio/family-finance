@@ -10,7 +10,7 @@ import {
 } from '@/components/dashboard/VariableBudgetStatusCard';
 import dayjs from 'dayjs';
 import { Decimal } from 'decimal.js';
-import { buildPeriodLabels, buildPeriods, PeriodMode } from '@/lib/period-utils';
+import { buildPeriodLabels, buildPeriods, PeriodMode, RECENT_AVERAGE_PERIODS } from '@/lib/period-utils';
 import { getPeriodModeSetting } from '@/lib/system-settings';
 import { getVariableBudgetPlan } from '@/lib/variable-budget';
 import {
@@ -22,9 +22,24 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+function buildFallbackBudgetStatus(periodLabel: string, periodKey: string): VariableBudgetStatus {
+  return {
+    hasPlan: false,
+    periodKey,
+    periodLabel,
+    updatedAt: '',
+    plannedTotal: 0,
+    actualTotal: 0,
+    remainingTotal: 0,
+    utilizationPercent: 0,
+    warningCount: 0,
+    overCount: 0,
+    alerts: [],
+  };
+}
+
 async function getAnalyticsData(periodMode: PeriodMode) {
-  const months = 6;
-  const periods = buildPeriods(periodMode, dayjs(), months);
+  const periods = buildPeriods(periodMode, dayjs(), RECENT_AVERAGE_PERIODS);
   const startDate = periods[0].startDate.startOf('day').toDate();
   const endDate = periods[periods.length - 1].endDate.endOf('day').toDate();
 
@@ -135,129 +150,128 @@ async function getRecentTransactions() {
 
 async function getCurrentVariableBudgetStatus(periodMode: PeriodMode): Promise<VariableBudgetStatus> {
   const currentPeriod = buildPeriods(periodMode, dayjs(), 1)[0];
-  const periodKey = currentPeriod.key;
-  const periodLabel = `${currentPeriod.label} ${currentPeriod.subLabel}`.trim();
+  const periodKey = currentPeriod?.key || dayjs().format('YYYY-MM');
+  const periodLabel = currentPeriod
+    ? `${currentPeriod.label} ${currentPeriod.subLabel}`.trim()
+    : periodKey;
 
-  const plan = await getVariableBudgetPlan(periodMode, periodKey);
-  const plannedEntries = Object.entries(plan.items || {});
-  if (plannedEntries.length === 0) {
+  try {
+    const plan = await getVariableBudgetPlan(periodMode, periodKey);
+    const plannedEntries = Object.entries(plan.items || {});
+    if (plannedEntries.length === 0) {
+      return buildFallbackBudgetStatus(periodLabel, periodKey);
+    }
+
+    const plannedCategoryIds = plannedEntries.map(([categoryId]) => categoryId).filter(Boolean);
+    if (plannedCategoryIds.length === 0) {
+      return buildFallbackBudgetStatus(periodLabel, periodKey);
+    }
+
+    const [expensesInPeriod, categories] = await Promise.all([
+      prisma.transaction.findMany({
+        where: {
+          isExcluded: false,
+          date: {
+            gte: currentPeriod.startDate.startOf('day').toDate(),
+            lte: currentPeriod.endDate.endOf('day').toDate(),
+          },
+          amount: { lt: 0 },
+          categoryId: { in: plannedCategoryIds },
+        },
+        select: {
+          categoryId: true,
+          amount: true,
+        },
+      }),
+      prisma.category.findMany({
+        where: {
+          id: { in: plannedCategoryIds },
+        },
+        select: {
+          id: true,
+          name: true,
+          icon: true,
+          color: true,
+        },
+      }),
+    ]);
+
+    const categoryById = new Map(categories.map((category) => [category.id, category]));
+    const actualByCategory = new Map<string, number>();
+
+    for (const tx of expensesInPeriod) {
+      if (!tx.categoryId) continue;
+      const current = actualByCategory.get(tx.categoryId) || 0;
+      const numericAmount = Number(tx.amount);
+      const amount = Number.isFinite(numericAmount) ? Math.abs(numericAmount) : 0;
+      actualByCategory.set(tx.categoryId, current + amount);
+    }
+
+    let plannedTotal = 0;
+    let actualTotal = 0;
+    let warningCount = 0;
+    let overCount = 0;
+    const alerts: VariableBudgetAlert[] = [];
+
+    for (const [categoryId, planned] of plannedEntries) {
+      const actual = actualByCategory.get(categoryId) || 0;
+      const utilization = planned > 0 ? (actual / planned) * 100 : 0;
+      const remaining = planned - actual;
+      const category = categoryById.get(categoryId);
+      const severity: VariableBudgetAlert['severity'] | null = utilization >= 100
+        ? 'over'
+        : utilization >= 85
+          ? 'warning'
+          : null;
+
+      plannedTotal += planned;
+      actualTotal += actual;
+
+      if (severity === 'over') overCount += 1;
+      if (severity === 'warning') warningCount += 1;
+
+      if (severity) {
+        alerts.push({
+          categoryId,
+          categoryName: category?.name || 'קטגוריה',
+          categoryIcon: category?.icon || '📁',
+          categoryColor: category?.color || '#6B7280',
+          planned,
+          actual,
+          remaining,
+          utilizationPercent: utilization,
+          severity,
+        });
+      }
+    }
+
+    alerts.sort((a, b) => {
+      if (b.utilizationPercent !== a.utilizationPercent) {
+        return b.utilizationPercent - a.utilizationPercent;
+      }
+      return b.actual - a.actual;
+    });
+
+    const remainingTotal = plannedTotal - actualTotal;
+    const utilizationPercent = plannedTotal > 0 ? (actualTotal / plannedTotal) * 100 : 0;
+
     return {
-      hasPlan: false,
+      hasPlan: true,
       periodKey,
       periodLabel,
-      updatedAt: '',
-      plannedTotal: 0,
-      actualTotal: 0,
-      remainingTotal: 0,
-      utilizationPercent: 0,
-      warningCount: 0,
-      overCount: 0,
-      alerts: [],
+      updatedAt: plan.updatedAt,
+      plannedTotal,
+      actualTotal,
+      remainingTotal,
+      utilizationPercent,
+      warningCount,
+      overCount,
+      alerts,
     };
+  } catch (error) {
+    console.error('Dashboard variable budget status error:', error);
+    return buildFallbackBudgetStatus(periodLabel, periodKey);
   }
-
-  const plannedCategoryIds = plannedEntries.map(([categoryId]) => categoryId);
-
-  const [expensesInPeriod, categories] = await Promise.all([
-    prisma.transaction.findMany({
-      where: {
-        isExcluded: false,
-        date: {
-          gte: currentPeriod.startDate.startOf('day').toDate(),
-          lte: currentPeriod.endDate.endOf('day').toDate(),
-        },
-        amount: { lt: 0 },
-        categoryId: { in: plannedCategoryIds },
-      },
-      select: {
-        categoryId: true,
-        amount: true,
-      },
-    }),
-    prisma.category.findMany({
-      where: {
-        id: { in: plannedCategoryIds },
-      },
-      select: {
-        id: true,
-        name: true,
-        icon: true,
-        color: true,
-      },
-    }),
-  ]);
-
-  const categoryById = new Map(categories.map((category) => [category.id, category]));
-  const actualByCategory = new Map<string, number>();
-
-  for (const tx of expensesInPeriod) {
-    if (!tx.categoryId) continue;
-    const current = actualByCategory.get(tx.categoryId) || 0;
-    const amount = Math.abs(Number(tx.amount));
-    actualByCategory.set(tx.categoryId, current + amount);
-  }
-
-  let plannedTotal = 0;
-  let actualTotal = 0;
-  let warningCount = 0;
-  let overCount = 0;
-  const alerts: VariableBudgetAlert[] = [];
-
-  for (const [categoryId, planned] of plannedEntries) {
-    const actual = actualByCategory.get(categoryId) || 0;
-    const utilization = planned > 0 ? (actual / planned) * 100 : 0;
-    const remaining = planned - actual;
-    const category = categoryById.get(categoryId);
-    const severity: VariableBudgetAlert['severity'] | null = utilization >= 100
-      ? 'over'
-      : utilization >= 85
-        ? 'warning'
-        : null;
-
-    plannedTotal += planned;
-    actualTotal += actual;
-
-    if (severity === 'over') overCount += 1;
-    if (severity === 'warning') warningCount += 1;
-
-    if (severity) {
-      alerts.push({
-        categoryId,
-        categoryName: category?.name || 'קטגוריה',
-        categoryIcon: category?.icon || '📁',
-        categoryColor: category?.color || '#6B7280',
-        planned,
-        actual,
-        remaining,
-        utilizationPercent: utilization,
-        severity,
-      });
-    }
-  }
-
-  alerts.sort((a, b) => {
-    if (b.utilizationPercent !== a.utilizationPercent) {
-      return b.utilizationPercent - a.utilizationPercent;
-    }
-    return b.actual - a.actual;
-  });
-
-  const remainingTotal = plannedTotal - actualTotal;
-  const utilizationPercent = plannedTotal > 0 ? (actualTotal / plannedTotal) * 100 : 0;
-
-  return {
-    hasPlan: true,
-    periodKey,
-    periodLabel,
-    updatedAt: plan.updatedAt,
-    plannedTotal,
-    actualTotal,
-    remainingTotal,
-    utilizationPercent,
-    warningCount,
-    overCount,
-    alerts,
-  };
 }
 
 export default async function HomePage() {

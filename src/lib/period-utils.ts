@@ -5,6 +5,7 @@ export type PeriodMode = 'calendar' | 'billing';
 
 export const PERIOD_MODE_SETTING_KEY = 'period_mode';
 export const DEFAULT_PERIOD_MODE: PeriodMode = 'calendar';
+export const RECENT_AVERAGE_PERIODS = 12;
 const BILLING_CUTOFF_DAY = 10;
 const BANK_INSTITUTIONS = new Set(['BANK_HAPOALIM', 'BANK_LEUMI']);
 const CREDIT_INSTITUTIONS = new Set(['ISRACARD', 'LEUMI_CARD']);

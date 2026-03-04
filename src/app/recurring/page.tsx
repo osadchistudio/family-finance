@@ -3,7 +3,7 @@ import { RecurringExpensesList } from '@/components/recurring/RecurringExpensesL
 import { Decimal } from 'decimal.js';
 import dayjs from 'dayjs';
 import { getPeriodModeSetting } from '@/lib/system-settings';
-import { getPeriodKey, PeriodMode } from '@/lib/period-utils';
+import { buildPeriods, getPeriodKey, PeriodMode, RECENT_AVERAGE_PERIODS } from '@/lib/period-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,8 +59,18 @@ async function getRecurringTransactions() {
 }
 
 async function getIncomeBaseline(periodMode: PeriodMode) {
+  const periods = buildPeriods(periodMode, dayjs(), RECENT_AVERAGE_PERIODS);
+  const startDate = periods[0].startDate.startOf('day').toDate();
+  const endDate = periods[periods.length - 1].endDate.endOf('day').toDate();
+
   const transactions = await prisma.transaction.findMany({
-    where: { isExcluded: false },
+    where: {
+      isExcluded: false,
+      date: {
+        gte: startDate,
+        lte: endDate,
+      },
+    },
     select: {
       date: true,
       amount: true
@@ -101,7 +111,7 @@ export default async function RecurringPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">הוצאות קבועות</h1>
         <p className="text-gray-600 mt-1">
-          {transactions.length} תנועות שסומנו כקבועות בהיסטוריה · חישוב בסיס הכנסה לפי {periodMode === 'billing' ? 'מחזור 10-10' : 'חודש קלנדרי'}
+          {transactions.length} תנועות שסומנו כקבועות בהיסטוריה · חישוב בסיס הכנסה לפי 12 {periodMode === 'billing' ? 'מחזורים' : 'חודשים'} אחרונים
         </p>
       </div>
 

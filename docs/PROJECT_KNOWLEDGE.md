@@ -25,6 +25,25 @@ Last updated: 2026-03-05
 
 ## Behavior updates
 
+### 2026-03-05 - Monthly summary cards now always ordered newest-to-oldest
+Why:
+- User requested deterministic ordering so the latest period is always displayed first at the top-right of the monthly summary grid
+- Previous display depended on upstream data order and could be inconsistent after future refactors
+
+What changed:
+- Added explicit client-side sort by `monthKey` descending in monthly summary view (`monthsByNewest`)
+- Grid card rendering now uses `monthsByNewest` so newest period appears first and oldest appears last
+- Related monthly computations now read from the same ordered source for consistency
+- Trend chart still keeps chronological left-to-right plotting by re-sorting ascending only for chart series
+
+Files touched:
+- `/src/components/monthly-summary/MonthlySummaryView.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only
+- No DB migration needed
+- UI behavior only: deterministic month-card order (newest first)
+
 ### 2026-03-05 - Charts now render timeline strictly left-to-right (English-style axis flow)
 Why:
 - User requested graph data flow to be visually consistent with English chart conventions (left-to-right timeline)

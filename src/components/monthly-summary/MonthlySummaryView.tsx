@@ -59,8 +59,12 @@ export function MonthlySummaryView({
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const labels = buildPeriodLabels(periodMode);
+  const monthsByNewest = useMemo(
+    () => [...months].sort((a, b) => b.monthKey.localeCompare(a.monthKey)),
+    [months]
+  );
 
-  const monthsWithData = useMemo(() => months.filter((m) => m.transactionCount > 0), [months]);
+  const monthsWithData = useMemo(() => monthsByNewest.filter((m) => m.transactionCount > 0), [monthsByNewest]);
   const completeMonthsWithData = useMemo(
     () => monthsWithData.filter((month) => month.isDataComplete),
     [monthsWithData]
@@ -85,7 +89,7 @@ export function MonthlySummaryView({
 
   const chartData = useMemo(
     () =>
-      [...months]
+      [...monthsByNewest]
         .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
         .map((month) => ({
           month: month.monthKey,
@@ -94,11 +98,11 @@ export function MonthlySummaryView({
           expense: month.expense,
           balance: month.balance,
         })),
-    [months]
+    [monthsByNewest]
   );
 
   if (selectedMonth) {
-    const monthData = months.find((m) => m.monthKey === selectedMonth);
+    const monthData = monthsByNewest.find((m) => m.monthKey === selectedMonth);
     if (!monthData) {
       setSelectedMonth(null);
       return null;
@@ -151,7 +155,7 @@ export function MonthlySummaryView({
           {periodMode === 'billing' ? 'סיכום לפי מחזורי חיוב' : 'סיכום לפי חודשים'}
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {months.map((month) => (
+          {monthsByNewest.map((month) => (
             <MonthCard
               key={month.monthKey}
               data={month}

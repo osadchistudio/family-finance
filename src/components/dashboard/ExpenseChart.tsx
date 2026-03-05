@@ -30,7 +30,7 @@ export function ExpenseChart({ data }: ExpenseChartProps) {
   return (
     <div className="bg-white rounded-xl shadow-sm p-3 sm:p-6">
       <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">מגמת הוצאות והכנסות</h3>
-      <div className="h-[220px] sm:h-64">
+      <div className="h-[220px] sm:h-64" dir="ltr">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 8, right: 0, left: -16, bottom: 0 }}>
             <defs>
@@ -46,6 +46,7 @@ export function ExpenseChart({ data }: ExpenseChartProps) {
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
             <XAxis
               dataKey="monthHebrew"
+              reversed={false}
               tick={{ fontSize: 11 }}
               tickLine={false}
               axisLine={false}

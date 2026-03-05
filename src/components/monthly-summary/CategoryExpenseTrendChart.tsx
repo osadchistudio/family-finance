@@ -322,12 +322,13 @@ export function CategoryExpenseTrendChart({
         </p>
       </div>
 
-      <div style={{ height: 256 }}>
+      <div style={{ height: 256 }} dir="ltr">
         <ResponsiveContainer width="100%" height={256}>
           <LineChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
             <XAxis
               dataKey="monthHebrew"
+              reversed={false}
               tick={{ fontSize: 12 }}
               tickLine={false}
               axisLine={false}

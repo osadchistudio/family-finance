@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 ## Stack
 - Next.js 16.1.6 (App Router, standalone output)
@@ -24,6 +24,61 @@ Last updated: 2026-03-04
 - `/prisma.config.ts` (required so Prisma 7 resolves schema path)
 
 ## Behavior updates
+
+### 2026-03-05 - Charts now render timeline strictly left-to-right (English-style axis flow)
+Why:
+- User requested graph data flow to be visually consistent with English chart conventions (left-to-right timeline)
+- In RTL app layout, chart containers can inherit direction and create confusing visual flow expectations
+
+What changed:
+- Forced chart rendering containers to `dir="ltr"` for timeline charts while keeping the rest of the page RTL
+- Added explicit `XAxis.reversed={false}` for deterministic left-to-right ordering in:
+  - dashboard income/expense area chart
+  - monthly-summary category trend line chart
+
+Files touched:
+- `/src/components/dashboard/ExpenseChart.tsx`
+- `/src/components/monthly-summary/CategoryExpenseTrendChart.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only
+- No DB migration needed
+- UI-only behavior change for chart axis flow
+
+### 2026-03-05 - Automatic Supabase recovery path + custom global error UI (no generic white screen)
+Why:
+- Production incident occurred when Supabase project moved to inactive/coming-up state, causing DB auth/adapter failures (`Tenant or user not found`) and default Next.js production white error page
+- Needed deterministic recovery UX and optional server-side wake flow so users see a clear state and the app can attempt self-heal
+
+What changed:
+- Added a server-side recovery utility that:
+  - checks DB connectivity (`SELECT 1`)
+  - classifies likely paused-project DB errors
+  - checks Supabase project status via Management API
+  - requests project recovery via Management API restore endpoint when status is not ready
+- Added a throttled internal API route:
+  - `GET /api/system/supabase-recovery` returns DB + project health snapshot
+  - `POST /api/system/supabase-recovery` runs one recovery attempt (cooldown 60s)
+- Added root App Router error boundary UI (`/src/app/error.tsx`) replacing the generic white crash screen:
+  - auto-triggers recovery attempt once
+  - polls health for automatic reload when DB is back
+  - shows clear Hebrew status/details + digest for debugging
+- Added optional environment variables for recovery flow:
+  - `SUPABASE_PROJECT_REF`
+  - `SUPABASE_MANAGEMENT_TOKEN`
+
+Files touched:
+- `/.env.example`
+- `/src/lib/supabase-recovery.ts`
+- `/src/app/api/system/supabase-recovery/route.ts`
+- `/src/app/error.tsx`
+
+Deploy/runtime impact:
+- Requires normal deploy only
+- No DB migration needed
+- New optional runtime config for fully automatic wake flow:
+  - if management env vars are missing, the app still shows friendly fallback status UI but cannot wake Supabase automatically
+- Recovery route is protected by existing auth middleware (not public)
 
 ### 2026-03-04 - Dashboard stability hardening for budget-status calculation (prevent homepage crash)
 Why:

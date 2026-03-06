@@ -42,6 +42,7 @@ Out of scope:
 - `OPENAI_MODEL` (default used: `gpt-5-mini`)
 - `TELEGRAM_BOT_TOKEN` (optional)
 - `TELEGRAM_WEBHOOK_SECRET` (optional)
+- `TELEGRAM_ALLOWED_CHAT_IDS` (required in production for secure Telegram access)
 - `AUTH_USERNAME`
 - `AUTH_PASSWORD_SHA256`
 - `AUTH_COOKIE_TOKEN`
@@ -82,6 +83,12 @@ Out of scope:
 - Consolidated credit-card charge rows in bank files are skipped to prevent double counting
 - Amount sign parsing hardened (debit/credit correctness and edge minus formats)
 
+### Telegram integration
+- Telegram bot supports upload webhook flow for supported finance files
+- Production access is restricted by `TELEGRAM_ALLOWED_CHAT_IDS`
+- If `TELEGRAM_ALLOWED_CHAT_IDS` is missing in production, the bot rejects all chats and returns the current `chat_id` for configuration
+- In non-production, missing `TELEGRAM_ALLOWED_CHAT_IDS` falls back to open access for local testing
+
 ### Dashboard
 - Presents generalized monthly picture (averages, not just current month totals)
 - Uses complete periods for averages where possible
@@ -119,6 +126,10 @@ Out of scope:
   - can request project restore when paused
 - Requires `SUPABASE_PROJECT_REF` + `SUPABASE_MANAGEMENT_TOKEN` for automatic wake
 
+## Planning documents
+- Product roadmap and next recommended release batches:
+  - `/docs/ROADMAP.md`
+
 ## Operational runbook
 
 ### If styling is broken in production
@@ -137,6 +148,45 @@ Out of scope:
 - App fallback UI can attempt auto-recovery if management env vars are configured
 
 ## Consolidated change log (major milestones)
+
+### 2026-03-06 - Telegram bot access hardening
+Why:
+- Existing Telegram webhook flow accepted files without chat-level authorization and needed a production-safe access gate
+
+What changed:
+- Added `TELEGRAM_ALLOWED_CHAT_IDS` env support
+- Added chat authorization middleware in Telegram bot service
+- Blocked unauthorized and unconfigured production chats before command/file processing
+- Returned helpful rejection messages that include the sender `chat_id` for setup
+
+Files touched:
+- `/src/services/telegram/TelegramBotService.ts`
+- `/.env.example`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- To use Telegram safely in production, configure `TELEGRAM_ALLOWED_CHAT_IDS`
+
+### 2026-03-06 - Roadmap definition for next release batches
+Why:
+- Needed a concrete milestone plan focused on fresh-data workflows, Telegram ingestion, reminders, and current-month control
+
+What changed:
+- Added a dedicated roadmap document with:
+  - release batches
+  - Telegram MVP scope
+  - reminder engine direction
+  - current-month control-center direction
+  - future smart nudges and Telegram command surface
+
+Files touched:
+- `/docs/ROADMAP.md`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Documentation-only change
 
 ### 2026-03-06 - Knowledge file normalization (scope cleanup)
 Why:

@@ -16,6 +16,7 @@ export interface TelegramUploadResult {
 export class TelegramBotService {
   private bot: Telegraf;
   private fileParserService: FileParserService;
+  private allowedChatIds: Set<string>;
 
   constructor() {
     const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -24,6 +25,7 @@ export class TelegramBotService {
     }
     this.bot = new Telegraf(token);
     this.fileParserService = new FileParserService();
+    this.allowedChatIds = this.parseAllowedChatIds(process.env.TELEGRAM_ALLOWED_CHAT_IDS);
   }
 
   /**
@@ -44,6 +46,25 @@ export class TelegramBotService {
    * Initialize bot commands and handlers
    */
   initialize(): void {
+    this.bot.use(async (ctx, next) => {
+      const access = this.getAccessState(ctx);
+
+      if (access.authorized) {
+        return next();
+      }
+
+      console.warn('Telegram bot unauthorized access blocked', {
+        chatId: access.chatId,
+        username: ctx.from?.username || null,
+        firstName: ctx.from?.first_name || null,
+        reason: access.reason,
+      });
+
+      if ('chat' in ctx && ctx.chat) {
+        await ctx.reply(this.getUnauthorizedMessage(access.reason, access.chatId));
+      }
+    });
+
     // /start command
     this.bot.start(async (ctx) => {
       await ctx.reply(
@@ -104,7 +125,7 @@ export class TelegramBotService {
         }
 
         await ctx.reply(message);
-      } catch (error) {
+      } catch {
         await ctx.reply('❌ שגיאה בקבלת סטטוס. נסה שוב מאוחר יותר.');
       }
     });
@@ -332,6 +353,72 @@ export class TelegramBotService {
       console.error('Failed to remove webhook:', error);
       return false;
     }
+  }
+
+  private parseAllowedChatIds(rawValue?: string): Set<string> {
+    if (!rawValue) {
+      return new Set();
+    }
+
+    return new Set(
+      rawValue
+        .split(/[,\s]+/)
+        .map((value) => value.trim())
+        .filter(Boolean)
+    );
+  }
+
+  private getAccessState(ctx: Context): {
+    authorized: boolean;
+    chatId: string | null;
+    reason: 'missing-chat' | 'not-configured' | 'not-allowed';
+  } {
+    const chatId = ctx.chat?.id != null ? String(ctx.chat.id) : null;
+
+    if (!chatId) {
+      return { authorized: false, chatId: null, reason: 'missing-chat' };
+    }
+
+    if (this.allowedChatIds.size === 0) {
+      if (process.env.NODE_ENV !== 'production') {
+        return { authorized: true, chatId, reason: 'not-configured' };
+      }
+
+      return { authorized: false, chatId, reason: 'not-configured' };
+    }
+
+    if (this.allowedChatIds.has(chatId)) {
+      return { authorized: true, chatId, reason: 'not-allowed' };
+    }
+
+    return { authorized: false, chatId, reason: 'not-allowed' };
+  }
+
+  private getUnauthorizedMessage(
+    reason: 'missing-chat' | 'not-configured' | 'not-allowed',
+    chatId: string | null
+  ): string {
+    if (reason === 'missing-chat') {
+      return '⛔ לא הצלחתי לזהות את הצ׳אט שממנו נשלחה הבקשה';
+    }
+
+    if (reason === 'not-configured') {
+      return [
+        '⚠️ הבוט עדיין לא הוגדר לגישה מאובטחת',
+        chatId ? `Chat ID לזיהוי: ${chatId}` : null,
+        'יש להגדיר בשרת את TELEGRAM_ALLOWED_CHAT_IDS לפני שימוש'
+      ]
+        .filter(Boolean)
+        .join('\n');
+    }
+
+    return [
+      '⛔ הצ׳אט הזה לא מורשה להשתמש בבוט',
+      chatId ? `Chat ID לזיהוי: ${chatId}` : null,
+      'אם זו גישה תקינה, יש להוסיף את ה-Chat ID ל-TELEGRAM_ALLOWED_CHAT_IDS'
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 }
 

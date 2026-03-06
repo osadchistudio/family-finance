@@ -46,11 +46,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 export async function GET(): Promise<NextResponse> {
   const hasToken = !!process.env.TELEGRAM_BOT_TOKEN;
   const hasSecret = !!process.env.TELEGRAM_WEBHOOK_SECRET;
+  const hasAllowedChats = Boolean(process.env.TELEGRAM_ALLOWED_CHAT_IDS?.trim());
 
   return NextResponse.json({
     status: 'ok',
     configured: hasToken,
     secretConfigured: hasSecret,
+    authorizedChatsConfigured: hasAllowedChats,
     message: hasToken
       ? 'Telegram webhook is ready'
       : 'TELEGRAM_BOT_TOKEN is not set',

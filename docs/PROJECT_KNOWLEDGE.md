@@ -200,6 +200,7 @@ Why:
 - Prisma 7 requires datasource URL to be declared in `prisma.config.ts` for CLI schema commands
 
 What changed:
+- Added `.env` auto-loading for Prisma CLI config
 - Added `migrations.path`
 - Added `datasource.url` wired to `DATABASE_URL`
 - Documented that `prisma db push` depends on this config

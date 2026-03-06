@@ -260,6 +260,7 @@ export class TelegramBotService {
         rowCount: transactions.length,
         status: 'PROCESSING',
         accountId: account.id,
+        source: 'TELEGRAM',
       },
     });
 

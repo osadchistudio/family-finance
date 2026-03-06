@@ -39,11 +39,13 @@ model FileUpload {
   originalName String
   rowCount     Int
   status       UploadStatus @default(COMPLETED)
+  source       UploadSource @default(WEB)
   processedAt  DateTime     @default(now())
 
   transactions Transaction[]
 
   @@index([accountId, processedAt])
+  @@index([source, processedAt])
 }
 
 enum UploadStatus {
@@ -51,6 +53,11 @@ enum UploadStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+enum UploadSource {
+  WEB
+  TELEGRAM
 }
 
 // תנועה בודדת

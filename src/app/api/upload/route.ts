@@ -84,7 +84,8 @@ export async function POST(request: NextRequest) {
         filename: file.name,
         originalName: file.name,
         rowCount: parseResult.rowCount,
-        status: 'COMPLETED'
+        status: 'COMPLETED',
+        source: 'WEB',
       }
     });
 

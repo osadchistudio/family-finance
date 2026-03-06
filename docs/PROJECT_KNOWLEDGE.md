@@ -82,6 +82,8 @@ Out of scope:
 - CSV/XLS/XLSX/PDF parsing pipeline
 - Consolidated credit-card charge rows in bank files are skipped to prevent double counting
 - Amount sign parsing hardened (debit/credit correctness and edge minus formats)
+- File uploads now track source metadata (`WEB` / `TELEGRAM`)
+- Upload page shows recent upload history with source badges
 
 ### Telegram integration
 - Telegram bot supports upload webhook flow for supported finance files
@@ -168,6 +170,29 @@ Deploy/runtime impact:
 - Normal deploy
 - No DB migration
 - To use Telegram safely in production, configure `TELEGRAM_ALLOWED_CHAT_IDS`
+
+### 2026-03-06 - Upload source tracking and recent upload visibility
+Why:
+- Telegram upload flow was working, but the app did not distinguish upload origin or expose a useful recent-upload inbox
+
+What changed:
+- Added `UploadSource` enum and `FileUpload.source`
+- Marked web uploads as `WEB`
+- Marked Telegram uploads as `TELEGRAM`
+- Added recent upload history on `/upload` with source badges
+
+Files touched:
+- `/prisma/schema.prisma`
+- `/prisma/migrations/20260306225000_add_upload_source/migration.sql`
+- `/src/app/api/upload/route.ts`
+- `/src/services/telegram/TelegramBotService.ts`
+- `/src/app/upload/page.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Requires schema update before app restart:
+  - `npx prisma db push`
+- Normal deploy after schema sync
 
 ### 2026-03-06 - Roadmap definition for next release batches
 Why:

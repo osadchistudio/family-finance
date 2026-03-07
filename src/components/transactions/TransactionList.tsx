@@ -62,6 +62,7 @@ interface TransactionListProps {
   categories: Category[];
   accounts: Account[];
   periodMode: PeriodMode;
+  initialCategoryId?: string;
   initialSnoozedSuggestionExpirations?: SnoozedSuggestionMap;
 }
 
@@ -362,12 +363,13 @@ export function TransactionList({
   categories: initialCategories,
   accounts,
   periodMode,
+  initialCategoryId = '',
   initialSnoozedSuggestionExpirations = {},
 }: TransactionListProps) {
   const [transactions, setTransactions] = useState(initialTransactions);
   const [categories, setCategories] = useState(initialCategories);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>(initialCategoryId);
   const [selectedAccount, setSelectedAccount] = useState<string>('');
   const [selectedAmountType, setSelectedAmountType] = useState<AmountTypeFilter>('all');
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);

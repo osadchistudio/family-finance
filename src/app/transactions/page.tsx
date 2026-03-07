@@ -5,6 +5,12 @@ import { getRecurringSuggestionSnoozes } from '@/lib/recurring-suggestion-snooze
 
 export const dynamic = 'force-dynamic';
 
+interface TransactionsPageProps {
+  searchParams?: Promise<{
+    categoryId?: string | string[];
+  }>;
+}
+
 async function getTransactions() {
   const transactions = await prisma.transaction.findMany({
     where: { isExcluded: false },
@@ -73,7 +79,10 @@ async function getAccounts() {
   });
 }
 
-export default async function TransactionsPage() {
+export default async function TransactionsPage({ searchParams }: TransactionsPageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const rawCategoryId = resolvedSearchParams?.categoryId;
+  const initialCategoryId = Array.isArray(rawCategoryId) ? rawCategoryId[0] : rawCategoryId;
   const [transactions, categories, accounts, periodMode, initialSnoozedSuggestionExpirations] = await Promise.all([
     getTransactions(),
     getCategories(),
@@ -98,6 +107,7 @@ export default async function TransactionsPage() {
         categories={categories}
         accounts={accounts}
         periodMode={periodMode}
+        initialCategoryId={initialCategoryId}
         initialSnoozedSuggestionExpirations={initialSnoozedSuggestionExpirations}
       />
     </div>

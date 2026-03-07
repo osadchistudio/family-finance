@@ -40,6 +40,7 @@ Out of scope:
 - `DIRECT_URL`
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL` (default used: `gpt-5-mini`)
+- `APP_BASE_URL` (optional, defaults to `https://osadchi-systems.com` for Telegram deep links)
 - `TELEGRAM_BOT_TOKEN` (optional)
 - `TELEGRAM_WEBHOOK_SECRET` (optional)
 - `TELEGRAM_ALLOWED_CHAT_IDS` (required in production for secure Telegram access)
@@ -90,6 +91,8 @@ Out of scope:
 - Production access is restricted by `TELEGRAM_ALLOWED_CHAT_IDS`
 - If `TELEGRAM_ALLOWED_CHAT_IDS` is missing in production, the bot rejects all chats and returns the current `chat_id` for configuration
 - In non-production, missing `TELEGRAM_ALLOWED_CHAT_IDS` falls back to open access for local testing
+- Upload replies now include quick links to `העלאות`, `תנועות`, and `לא מסווגות` when relevant
+- Upload replies now show up to 3 example errors instead of only an error count
 
 ### Dashboard
 - Presents generalized monthly picture (averages, not just current month totals)
@@ -213,6 +216,29 @@ Deploy/runtime impact:
 - Future `npx prisma db push` and related Prisma CLI commands now work with the existing `.env`
 - Prisma schema commands prefer `DIRECT_URL` (direct PostgreSQL connection) and only fall back to `DATABASE_URL`
 - Full rebuild still required after schema changes
+
+### 2026-03-07 - Telegram upload replies enriched with deep links and error samples
+Why:
+- Telegram upload flow worked, but the response was still too thin for real use on mobile
+- Needed faster follow-up actions after upload and more actionable error feedback
+
+What changed:
+- Added quick-link buttons to open uploads and transactions directly from Telegram
+- Added direct link to uncategorized transactions when imported rows remain unassigned
+- Improved upload success/failure messages to include short error samples
+- Added optional `APP_BASE_URL` for Telegram deep-link generation
+- Added transactions page support for `?categoryId=uncategorized` initial filter
+
+Files touched:
+- `/src/services/telegram/TelegramBotService.ts`
+- `/src/app/transactions/page.tsx`
+- `/src/components/transactions/TransactionList.tsx`
+- `/.env.example`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Full rebuild required
+- No DB migration
 
 ### 2026-03-06 - Roadmap definition for next release batches
 Why:

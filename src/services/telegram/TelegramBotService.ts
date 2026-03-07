@@ -1,17 +1,9 @@
-import { Telegraf, Context } from 'telegraf';
+import { Telegraf, Context, Markup } from 'telegraf';
 import { Message, Update } from 'telegraf/types';
 import { prisma } from '@/lib/prisma';
 import { FileParserService } from '@/services/parsers/FileParserService';
 import { KeywordCategorizer } from '@/services/categorization/KeywordCategorizer';
 import { RecurringKeywordMatcher } from '@/services/categorization/RecurringKeywordMatcher';
-
-export interface TelegramUploadResult {
-  success: boolean;
-  message: string;
-  imported?: number;
-  duplicates?: number;
-  errors?: number;
-}
 
 export class TelegramBotService {
   private bot: Telegraf;
@@ -102,6 +94,7 @@ export class TelegramBotService {
           select: {
             filename: true,
             rowCount: true,
+            source: true,
             processedAt: true,
             account: {
               select: {
@@ -121,10 +114,10 @@ export class TelegramBotService {
           const date = upload.processedAt.toLocaleDateString('he-IL');
           message += `📄 ${upload.filename}\n`;
           message += `   🏦 ${upload.account.institution || 'לא ידוע'}\n`;
-          message += `   📝 ${upload.rowCount} תנועות | ${date}\n\n`;
+          message += `   ${upload.source === 'TELEGRAM' ? '📲' : '🌐'} ${upload.source === 'TELEGRAM' ? 'טלגרם' : 'אתר'} | ${upload.rowCount} תנועות | ${date}\n\n`;
         }
 
-        await ctx.reply(message);
+        await ctx.reply(message, this.buildPostUploadKeyboard({ hasTransactions: true, hasUncategorized: false }));
       } catch {
         await ctx.reply('❌ שגיאה בקבלת סטטוס. נסה שוב מאוחר יותר.');
       }
@@ -183,8 +176,11 @@ export class TelegramBotService {
       const parseResult = await this.fileParserService.parseFile(buffer, filename);
 
       if (!parseResult.transactions || parseResult.transactions.length === 0) {
-        const errorMsg = parseResult.errors?.length > 0 ? parseResult.errors.join(', ') : 'לא נמצאו תנועות';
-        await ctx.reply(`❌ שגיאה בפירוש הקובץ: ${errorMsg}`);
+        const errorMsg = this.formatErrorSamples(parseResult.errors);
+        await ctx.reply(
+          `❌ לא הצלחתי לייבא תנועות מהקובץ\n\n${errorMsg}`,
+          this.buildPostUploadKeyboard({ hasTransactions: false, hasUncategorized: false })
+        );
         return;
       }
 
@@ -192,8 +188,8 @@ export class TelegramBotService {
       const result = await this.saveTransactions(parseResult, filename);
 
       // Send success message
-      const emoji = result.imported > 0 ? '✅' : '⚠️';
-      let message = `${emoji} העלאה הושלמה!\n\n`;
+      const emoji = result.imported > 0 ? '✅' : result.duplicates > 0 ? 'ℹ️' : '⚠️';
+      let message = `${emoji} העלאה הושלמה\n\n`;
       message += `📄 קובץ: ${filename}\n`;
       message += `🏦 מוסד: ${parseResult.institution}\n`;
       message += `📝 תנועות שיובאו: ${result.imported}\n`;
@@ -201,15 +197,34 @@ export class TelegramBotService {
       if (result.duplicates > 0) {
         message += `🔄 כפילויות שדולגו: ${result.duplicates}\n`;
       }
+      if (result.uncategorized > 0) {
+        message += `🏷️ לא משויכות: ${result.uncategorized}\n`;
+      }
       if (result.errors > 0) {
         message += `❌ שגיאות: ${result.errors}\n`;
+        const errorPreview = this.formatErrorSamples([
+          ...parseResult.errors,
+          ...result.errorDetails,
+        ]);
+        if (errorPreview) {
+          message += `\n${errorPreview}\n`;
+        }
       }
 
-      await ctx.reply(message);
+      await ctx.reply(
+        message.trim(),
+        this.buildPostUploadKeyboard({
+          hasTransactions: result.imported > 0 || result.duplicates > 0,
+          hasUncategorized: result.uncategorized > 0,
+        })
+      );
 
     } catch (error) {
       console.error('Telegram file upload error:', error);
-      await ctx.reply('❌ שגיאה בעיבוד הקובץ. נסה שוב או העלה דרך הממשק.');
+      await ctx.reply(
+        '❌ שגיאה בעיבוד הקובץ\nנסה שוב או פתח את מסך ההעלאות במערכת',
+        this.buildPostUploadKeyboard({ hasTransactions: false, hasUncategorized: false })
+      );
     }
   }
 
@@ -219,11 +234,19 @@ export class TelegramBotService {
   private async saveTransactions(
     parseResult: Awaited<ReturnType<FileParserService['parseFile']>>,
     filename: string
-  ): Promise<{ imported: number; duplicates: number; errors: number }> {
+  ): Promise<{
+    imported: number;
+    duplicates: number;
+    errors: number;
+    uncategorized: number;
+    errorDetails: string[];
+  }> {
     const transactions = parseResult.transactions || [];
     let imported = 0;
     let duplicates = 0;
     let errors = 0;
+    let uncategorized = 0;
+    const errorDetails: string[] = [];
 
     // Get or create account
     const accountName = `${parseResult.institution} - ${parseResult.cardNumber || 'חשבון'}`;
@@ -293,6 +316,9 @@ export class TelegramBotService {
         const categorizationResult = await keywordCategorizer.categorize(tx.description);
         const categoryId = categorizationResult?.categoryId || null;
         const isRecurring = await recurringMatcher.match(tx.description);
+        if (!categoryId) {
+          uncategorized++;
+        }
 
         // Create transaction
         await prisma.transaction.create({
@@ -313,6 +339,10 @@ export class TelegramBotService {
       } catch (error) {
         console.error('Error saving transaction:', error);
         errors++;
+        if (errorDetails.length < 3) {
+          const reason = error instanceof Error ? error.message : 'שגיאה לא ידועה';
+          errorDetails.push(`${tx.description} — ${reason}`);
+        }
       }
     }
 
@@ -325,7 +355,7 @@ export class TelegramBotService {
       },
     });
 
-    return { imported, duplicates, errors };
+    return { imported, duplicates, errors, uncategorized, errorDetails };
   }
 
   /**
@@ -420,6 +450,56 @@ export class TelegramBotService {
     ]
       .filter(Boolean)
       .join('\n');
+  }
+
+  private getAppBaseUrl(): string {
+    return (process.env.APP_BASE_URL || 'https://osadchi-systems.com').replace(/\/+$/, '');
+  }
+
+  private buildPostUploadKeyboard({
+    hasTransactions,
+    hasUncategorized,
+  }: {
+    hasTransactions: boolean;
+    hasUncategorized: boolean;
+  }) {
+    const baseUrl = this.getAppBaseUrl();
+    const buttons = [];
+
+    if (hasUncategorized) {
+      buttons.push([
+        Markup.button.url('פתח לא מסווגות', `${baseUrl}/transactions?categoryId=uncategorized`),
+      ]);
+    }
+
+    if (hasTransactions) {
+      buttons.push([
+        Markup.button.url('פתח תנועות', `${baseUrl}/transactions`),
+        Markup.button.url('פתח העלאות', `${baseUrl}/upload`),
+      ]);
+    } else {
+      buttons.push([
+        Markup.button.url('פתח העלאות', `${baseUrl}/upload`),
+      ]);
+    }
+
+    return Markup.inlineKeyboard(buttons);
+  }
+
+  private formatErrorSamples(errors: string[]): string {
+    const normalizedErrors = errors
+      .map((error) => error.trim())
+      .filter(Boolean)
+      .slice(0, 3);
+
+    if (normalizedErrors.length === 0) {
+      return '';
+    }
+
+    return [
+      'דוגמאות לשגיאות:',
+      ...normalizedErrors.map((error, index) => `${index + 1}) ${error}`),
+    ].join('\n');
   }
 }
 

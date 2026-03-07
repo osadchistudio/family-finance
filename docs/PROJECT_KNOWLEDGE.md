@@ -202,7 +202,7 @@ Why:
 What changed:
 - Added `.env` auto-loading for Prisma CLI config
 - Added `migrations.path`
-- Added `datasource.url` wired to `DATABASE_URL`
+- Added `datasource.url` wired to `DIRECT_URL` with fallback to `DATABASE_URL`
 - Documented that `prisma db push` depends on this config
 
 Files touched:
@@ -211,6 +211,7 @@ Files touched:
 
 Deploy/runtime impact:
 - Future `npx prisma db push` and related Prisma CLI commands now work with the existing `.env`
+- Prisma schema commands prefer `DIRECT_URL` (direct PostgreSQL connection) and only fall back to `DATABASE_URL`
 - Full rebuild still required after schema changes
 
 ### 2026-03-06 - Roadmap definition for next release batches

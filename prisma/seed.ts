@@ -69,7 +69,7 @@ const categories = [
     keywords: [
       'נטפליקס', 'netflix', 'ספוטיפיי', 'spotify', 'אמזון פריים', 'amazon prime',
       'דיסני', 'disney', 'אפל', 'apple', 'גוגל', 'google', 'מיקרוסופט', 'microsoft',
-      'יוטיוב', 'youtube', 'HBO', 'hbo max', 'chatgpt', 'openai', 'anthropic',
+      'יוטיוב', 'youtube', 'HBO', 'hbo max', 'chatgpt', 'openai',
       'dropbox', 'icloud', 'אפליקציה', 'מנוי דיגיטלי', 'סטרימינג'
     ]
   },

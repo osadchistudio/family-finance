@@ -19,6 +19,7 @@ Out of scope:
 - Tailwind CSS v4 via `@tailwindcss/postcss`
 - Prisma 7 + PostgreSQL (Supabase)
 - PM2 process name: `family-finance`
+- Active AI categorization provider: OpenAI only
 
 ## Production deployment (DigitalOcean)
 - Server path: `/root/family-finance`
@@ -540,3 +541,22 @@ For every functional change in this repository, update this file in the same com
 - What changed
 - Exact files touched
 - Deploy/runtime impact
+
+### 2026-03-07 - Removed legacy Anthropic remnants
+Why:
+- Anthropic is no longer part of the active product flow and leftover code created confusion about which AI provider is actually in use
+
+What changed:
+- Removed unused legacy root `route.ts` that called Anthropic directly
+- Removed leftover `anthropic` keyword from the default digital-services seed data
+- Clarified that OpenAI is the active categorization provider
+
+Files touched:
+- `/route.ts`
+- `/prisma/seed.ts`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- No behavior change for active production flows

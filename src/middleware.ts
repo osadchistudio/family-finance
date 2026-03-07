@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE_NAME, isValidSessionToken } from '@/lib/auth';
 
 const PUBLIC_ROUTES = ['/login'];
-const PUBLIC_API_ROUTES = ['/api/auth/login', '/api/telegram/webhook'];
+const PUBLIC_API_ROUTES = ['/api/auth/login', '/api/telegram/webhook', '/api/telegram/reminders/run'];
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_ROUTES.includes(pathname)) return true;

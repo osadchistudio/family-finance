@@ -386,6 +386,26 @@ export class TelegramBotService {
     }
   }
 
+  async sendMessageToAllowedChats(
+    message: string,
+    replyMarkup?: ReturnType<typeof Markup.inlineKeyboard>
+  ): Promise<number> {
+    let sentCount = 0;
+
+    for (const chatId of this.allowedChatIds) {
+      try {
+        await this.bot.telegram.sendMessage(chatId, message, {
+          ...(replyMarkup ? replyMarkup : {}),
+        });
+        sentCount++;
+      } catch (error) {
+        console.error('Failed to send Telegram message', { chatId, error });
+      }
+    }
+
+    return sentCount;
+  }
+
   private parseAllowedChatIds(rawValue?: string): Set<string> {
     if (!rawValue) {
       return new Set();

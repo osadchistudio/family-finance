@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-03-06
+Last updated: 2026-03-07
 
 ## Scope (Canonical)
 This document is **only** for the `family-finance` web application
@@ -44,6 +44,7 @@ Out of scope:
 - `TELEGRAM_BOT_TOKEN` (optional)
 - `TELEGRAM_WEBHOOK_SECRET` (optional)
 - `TELEGRAM_ALLOWED_CHAT_IDS` (required in production for secure Telegram access)
+- `TELEGRAM_REMINDER_SECRET` (required for cron-triggered Telegram reminders)
 - `AUTH_USERNAME`
 - `AUTH_PASSWORD_SHA256`
 - `AUTH_COOKIE_TOKEN`
@@ -93,6 +94,14 @@ Out of scope:
 - In non-production, missing `TELEGRAM_ALLOWED_CHAT_IDS` falls back to open access for local testing
 - Upload replies now include quick links to `העלאות`, `תנועות`, and `לא מסווגות` when relevant
 - Upload replies now show up to 3 example errors instead of only an error count
+- Telegram reminder engine now supports:
+  - weekly reminder day/hour configuration in `/settings`
+  - rule checks for:
+    - no uploads in the last 7 days
+    - missing current-period data source (`עו"ש` / `אשראי`)
+    - uncategorized transactions in the current period
+  - test-send from `/settings`
+  - secure cron trigger via `/api/telegram/reminders/run` guarded by `TELEGRAM_REMINDER_SECRET`
 
 ### Dashboard
 - Presents generalized monthly picture (averages, not just current month totals)
@@ -152,7 +161,48 @@ Out of scope:
 - Resume project in Supabase
 - App fallback UI can attempt auto-recovery if management env vars are configured
 
+### If Telegram reminders do not fire
+- Verify `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_CHAT_IDS`, and `TELEGRAM_REMINDER_SECRET`
+- Verify `/settings` shows all Telegram reminder infrastructure flags as configured
+- Verify cron calls `POST /api/telegram/reminders/run` with header:
+  - `x-telegram-reminder-secret: <TELEGRAM_REMINDER_SECRET>`
+- Manual server-side test:
+  - `curl -X POST https://osadchi-systems.com/api/telegram/reminders/run -H "x-telegram-reminder-secret: ..."`
+- Manual authenticated UI test:
+  - use `שלח בדיקה עכשיו` in `/settings`
+
 ## Consolidated change log (major milestones)
+
+### 2026-03-07 - Telegram reminder engine MVP
+Why:
+- Needed proactive freshness reminders because the product still relies on manual data uploads
+
+What changed:
+- Added Telegram reminder settings in `/settings`
+- Added rule-based reminder evaluation:
+  - no upload in last 7 days
+  - missing current-period source
+  - uncategorized transactions in current period
+- Added secure cron trigger endpoint for scheduled Telegram reminders
+- Added "send test now" action from settings
+
+Files touched:
+- `/src/lib/telegram-reminder-config.ts`
+- `/src/lib/system-settings.ts`
+- `/src/lib/telegram-reminders.ts`
+- `/src/services/telegram/TelegramBotService.ts`
+- `/src/app/settings/page.tsx`
+- `/src/app/api/settings/telegram-reminders/route.ts`
+- `/src/app/api/settings/telegram-reminders/test/route.ts`
+- `/src/app/api/telegram/reminders/run/route.ts`
+- `/src/middleware.ts`
+- `/.env.example`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- Requires `TELEGRAM_REMINDER_SECRET` on production for cron execution
 
 ### 2026-03-06 - Telegram bot access hardening
 Why:

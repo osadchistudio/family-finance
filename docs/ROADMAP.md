@@ -1,6 +1,6 @@
 # Family Finance - Product Roadmap
 
-Last updated: 2026-03-06
+Last updated: 2026-03-07
 
 ## Product goal
 The next phase should optimize the system for `freshness of data`, not only historical analysis
@@ -97,6 +97,22 @@ Technical shape:
 - scheduled worker or cron-triggered route
 - reminder log table or setting-based state
 - per-rule deduplication to avoid spam
+
+Current MVP status:
+- implemented
+- settings live in `/settings`
+- secure cron endpoint added at `/api/telegram/reminders/run`
+- manual `send test now` action added in `/settings`
+- conditions currently supported:
+  - no upload in the last 7 days
+  - missing current-period source
+  - uncategorized transactions in the current period
+
+Still missing for later expansion:
+- per-rule snooze/dismiss from Telegram
+- threshold configuration for uncategorized count
+- richer reminder history/audit log
+- different reminder schedules per rule
 
 ### Batch 3 - Current month control center
 Primary goal:

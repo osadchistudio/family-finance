@@ -83,6 +83,7 @@ Out of scope:
 
 ### Upload and parsing
 - CSV/XLS/XLSX/PDF parsing pipeline
+- PDF parsing supports Bank Hapoalim account statements and Isracard billing PDFs
 - Consolidated credit-card charge rows in bank files are skipped to prevent double counting
 - Amount sign parsing hardened (debit/credit correctness and edge minus formats)
 - File uploads now track source metadata (`WEB` / `TELEGRAM`)

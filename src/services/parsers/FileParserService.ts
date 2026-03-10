@@ -9,6 +9,8 @@ import { PARSER_CONFIGS, INSTITUTION_MARKERS } from './configs';
 import { smartColumnDetector, DetectedColumns } from './SmartColumnDetector';
 import { parseAmount } from '@/lib/formatters';
 import { BankHapoalimPdfParser } from './BankHapoalimPdfParser';
+import { IsracardPdfParser } from './IsracardPdfParser';
+import { extractPdfPages } from './pdfText';
 
 dayjs.extend(customParseFormat);
 
@@ -478,24 +480,39 @@ export class FileParserService {
   }
 
   /**
-   * Parse PDF file (currently supports Bank Hapoalim)
+   * Parse PDF file
    */
   private async parsePdf(buffer: Buffer, filename: string): Promise<ParseResult> {
-    const pdfParser = new BankHapoalimPdfParser();
-
     try {
-      const result = await pdfParser.parse(buffer);
+      const pages = await extractPdfPages(buffer);
+      const fullText = pages.join('\n');
+      const isracardPdfParser = new IsracardPdfParser();
+      const bankHapoalimPdfParser = new BankHapoalimPdfParser();
+
+      let result;
+
+      if (isracardPdfParser.isIsracard(fullText)) {
+        result = await isracardPdfParser.parse(buffer, pages);
+      } else if (bankHapoalimPdfParser.isBankHapoalim(fullText)) {
+        result = await bankHapoalimPdfParser.parse(buffer, pages);
+      } else {
+        throw new Error(`פורמט PDF לא נתמך: ${filename}`);
+      }
 
       // Convert PDF transactions to ParsedTransaction format
       const transactions: ParsedTransaction[] = result.transactions.map(tx => ({
         date: this.parseDate(tx.date).toDate(),
         description: tx.description,
         amount: tx.amount,
+        valueDate: tx.valueDate ? this.parseDate(tx.valueDate).toDate() : undefined,
+        originalAmount: tx.originalAmount,
+        originalCurrency: tx.originalCurrency,
+        reference: tx.reference,
       }));
 
       return {
         institution: result.institution,
-        cardNumber: result.accountNumber, // Use cardNumber field for account number
+        cardNumber: result.cardNumber ?? result.accountNumber,
         transactions,
         rowCount: result.transactions.length,
         successCount: transactions.length,
@@ -505,7 +522,7 @@ export class FileParserService {
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : 'שגיאה בפענוח קובץ PDF';
       return {
-        institution: 'BANK_HAPOALIM',
+        institution: 'OTHER',
         transactions: [],
         rowCount: 0,
         successCount: 0,

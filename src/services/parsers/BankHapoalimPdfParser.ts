@@ -1,19 +1,5 @@
-import { extractText } from 'unpdf';
-
-export interface PdfTransaction {
-  date: string;
-  description: string;
-  debit: number | null;
-  credit: number | null;
-  amount: number;
-}
-
-export interface PdfParseResult {
-  institution: 'BANK_HAPOALIM';
-  accountNumber: string;
-  accountName: string;
-  transactions: PdfTransaction[];
-}
+import { PdfParseResult, PdfTransaction } from './pdfTypes';
+import { extractPdfPages } from './pdfText';
 
 export class BankHapoalimPdfParser {
   private static CARD_BILL_KEYWORDS = [
@@ -37,12 +23,9 @@ export class BankHapoalimPdfParser {
   /**
    * Parse Bank Hapoalim PDF statement
    */
-  async parse(buffer: Buffer): Promise<PdfParseResult> {
-    // Extract text from PDF using unpdf - requires Uint8Array
-    const uint8Array = new Uint8Array(buffer);
-    const { text: pages } = await extractText(uint8Array);
-    // Join all pages into a single string
-    const fullText = Array.isArray(pages) ? pages.join('\n') : pages;
+  async parse(buffer: Buffer, pages?: string[]): Promise<PdfParseResult> {
+    const resolvedPages = pages ?? await extractPdfPages(buffer);
+    const fullText = resolvedPages.join('\n');
 
     // Verify this is a Bank Hapoalim document
     if (!this.isBankHapoalim(fullText)) {

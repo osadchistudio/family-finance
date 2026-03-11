@@ -96,6 +96,7 @@ Out of scope:
 - In non-production, missing `TELEGRAM_ALLOWED_CHAT_IDS` falls back to open access for local testing
 - Upload replies now include quick links to `העלאות`, `תנועות`, and `לא מסווגות` when relevant
 - Upload replies now show up to 3 example errors instead of only an error count
+- Telegram upload duplicate conflicts from the DB unique key are treated as duplicates, not surfaced as import errors
 - Telegram reminder engine now supports:
   - weekly reminder day/hour configuration in `/settings`
   - rule checks for:

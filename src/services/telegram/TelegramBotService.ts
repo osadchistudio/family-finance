@@ -1,5 +1,6 @@
 import { Telegraf, Context, Markup } from 'telegraf';
 import { Message, Update } from 'telegraf/types';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { FileParserService } from '@/services/parsers/FileParserService';
 import { KeywordCategorizer } from '@/services/categorization/KeywordCategorizer';
@@ -241,6 +242,7 @@ export class TelegramBotService {
     uncategorized: number;
     errorDetails: string[];
   }> {
+    const AMOUNT_EPSILON = 0.01;
     const transactions = parseResult.transactions || [];
     let imported = 0;
     let duplicates = 0;
@@ -275,6 +277,21 @@ export class TelegramBotService {
     const recurringMatcher = new RecurringKeywordMatcher();
     await recurringMatcher.loadKeywords();
 
+    const existingTransactions = await prisma.transaction.findMany({
+      where: { accountId: account.id },
+      select: { id: true, date: true, amount: true, description: true, reference: true },
+    });
+
+    const existingKeysByContent = new Set(
+      existingTransactions.map((tx) => `${tx.date.toISOString()}_${tx.amount}_${tx.description}`)
+    );
+    const existingByRef = new Map(
+      existingTransactions
+        .filter((tx) => tx.reference)
+        .map((tx) => [tx.reference!, tx])
+    );
+    const seenRefsInFile = new Set<string>();
+
     // Create file upload record
     const fileUpload = await prisma.fileUpload.create({
       data: {
@@ -290,26 +307,36 @@ export class TelegramBotService {
     // Process transactions
     for (const tx of transactions) {
       try {
-        // Check for duplicates
-        const existing = await prisma.transaction.findFirst({
-          where: {
-            OR: [
-              { reference: tx.reference || undefined },
-              {
-                AND: [
-                  { date: tx.date },
-                  { amount: tx.amount },
-                  { description: tx.description },
-                  { accountId: account.id },
-                ],
-              },
-            ],
-          },
-        });
+        if (tx.reference) {
+          if (seenRefsInFile.has(tx.reference)) {
+            duplicates++;
+            continue;
+          }
 
-        if (existing) {
+          const existing = existingByRef.get(tx.reference);
+          if (existing) {
+            const existingAmount = parseFloat(existing.amount.toString());
+            const incomingAmount = tx.amount;
+            const sameAbsoluteAmount =
+              Math.abs(Math.abs(existingAmount) - Math.abs(incomingAmount)) < AMOUNT_EPSILON;
+            const signChanged = Math.sign(existingAmount) !== Math.sign(incomingAmount);
+
+            if (!sameAbsoluteAmount || !signChanged) {
+              duplicates++;
+              continue;
+            }
+          }
+        }
+
+        const contentKey = `${tx.date.toISOString()}_${tx.amount}_${tx.description}`;
+        if (existingKeysByContent.has(contentKey)) {
           duplicates++;
           continue;
+        }
+
+        existingKeysByContent.add(contentKey);
+        if (tx.reference) {
+          seenRefsInFile.add(tx.reference);
         }
 
         // Auto-categorize
@@ -324,6 +351,7 @@ export class TelegramBotService {
         await prisma.transaction.create({
           data: {
             date: tx.date,
+            valueDate: tx.valueDate || null,
             description: tx.description,
             amount: tx.amount,
             reference: tx.reference || null,
@@ -337,6 +365,11 @@ export class TelegramBotService {
 
         imported++;
       } catch (error) {
+        if (this.isDuplicateTransactionError(error)) {
+          duplicates++;
+          continue;
+        }
+
         console.error('Error saving transaction:', error);
         errors++;
         if (errorDetails.length < 3) {
@@ -520,6 +553,22 @@ export class TelegramBotService {
       'דוגמאות לשגיאות:',
       ...normalizedErrors.map((error, index) => `${index + 1}) ${error}`),
     ].join('\n');
+  }
+
+  private isDuplicateTransactionError(error: unknown): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
+      return false;
+    }
+
+    if (error.code !== 'P2002') {
+      return false;
+    }
+
+    const target = Array.isArray(error.meta?.target) ? error.meta.target : [];
+    return target.includes('accountId')
+      && target.includes('date')
+      && target.includes('amount')
+      && target.includes('description');
   }
 }
 

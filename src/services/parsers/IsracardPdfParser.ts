@@ -1,5 +1,5 @@
 import { PdfParseResult, PdfTransaction } from './pdfTypes';
-import { extractPdfPages } from './pdfText';
+import { extractPdfPagesWithPdfParse } from './pdfText';
 
 type Section = 'foreign' | 'domestic' | null;
 
@@ -18,8 +18,11 @@ export class IsracardPdfParser {
     'מכולת/סופר',
     'פנאי/ספורט',
     "תש'רשויות",
+    "תש' רשויות",
     'שירותירכב',
+    'שירותי רכב',
     'שרותרפואי',
+    'שרות רפואי',
     'ספרים/דיסק',
     'מעדניות',
     'תקשורת',
@@ -30,12 +33,37 @@ export class IsracardPdfParser {
     'ביטוח',
     'שונות',
     'כליבית',
+    'כלי בית',
     'רהיטים',
     'דלק',
   ];
+  private static DOMESTIC_PROMO_MARKERS = [
+    'חמישהימיביטוחמתנה',
+    'ביטוחנסיעותלחול',
+    'לשלםמהטלפוןהנייד',
+    'פשוטלהצמידאתהנייד',
+    'התשלוםבוצע',
+    'סירקואתהברקודהמצורף',
+    'להצטרפותבלינקהזה',
+  ];
+
+  private compactForDetection(value: string): string {
+    return value.replace(/\s+/g, '').trim();
+  }
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private flexibleSpacingPattern(value: string, options?: { start?: boolean; end?: boolean }): RegExp {
+    const escaped = this.escapeRegex(value).replace(/\s+/g, '\\s*');
+    const prefix = options?.start ? '^' : '';
+    const suffix = options?.end ? '$' : '';
+    return new RegExp(`${prefix}${escaped}${suffix}`);
+  }
 
   async parse(buffer: Buffer, pages?: string[]): Promise<PdfParseResult> {
-    const resolvedPages = pages ?? await extractPdfPages(buffer);
+    const resolvedPages = pages ?? await extractPdfPagesWithPdfParse(buffer);
     const fullText = resolvedPages.join('\n');
 
     if (!this.isIsracard(fullText)) {
@@ -52,7 +80,7 @@ export class IsracardPdfParser {
   }
 
   isIsracard(text: string): boolean {
-    const lowerText = text.toLowerCase();
+    const lowerText = this.compactForDetection(text.toLowerCase());
     return (
       lowerText.includes('ישראכרט') &&
       (lowerText.includes('פרוטפעולותיךלתאריך') || lowerText.includes('עסקותשחויבו/זוכו-בארץ'))
@@ -60,11 +88,11 @@ export class IsracardPdfParser {
   }
 
   private extractCardNumber(text: string): string | undefined {
-    return text.match(/כרטיסשמסתייםבספרות:(\d{4})/)?.[1];
+    return text.match(/כרטיס\s*שמסתיים\s*בספרות:\s*(\d{4})/)?.[1];
   }
 
   private extractBillingAccount(text: string): string | undefined {
-    return text.match(/מספרחשבוןלחיובבמטבעישראלי:([\d-]+)/)?.[1];
+    return text.match(/מספר\s*חשבון\s*לחיוב\s*במטבע\s*ישראלי:\s*([\d-]+)/)?.[1];
   }
 
   private parseTransactions(pages: string[]): PdfTransaction[] {
@@ -80,13 +108,14 @@ export class IsracardPdfParser {
 
       for (let index = 0; index < lines.length; index++) {
         const line = lines[index];
+        const compactLine = this.compactForDetection(line);
 
-        if (line.includes('רכישותבחו"ל')) {
+        if (compactLine.includes('רכישותבחו"ל')) {
           currentSection = 'foreign';
           continue;
         }
 
-        if (line.includes('עסקותשחויבו/זוכו-בארץ')) {
+        if (compactLine.includes('עסקותשחויבו/זוכו-בארץ')) {
           currentSection = 'domestic';
           continue;
         }
@@ -140,8 +169,9 @@ export class IsracardPdfParser {
 
     for (; cursor < lines.length; cursor++) {
       const line = lines[cursor];
+      const compactLine = this.compactForDetection(line);
 
-      if (line.includes('רכישותבחו"ל') || line.includes('עסקותשחויבו/זוכו-בארץ')) {
+      if (compactLine.includes('רכישותבחו"ל') || compactLine.includes('עסקותשחויבו/זוכו-בארץ')) {
         break;
       }
 
@@ -167,24 +197,27 @@ export class IsracardPdfParser {
   }
 
   private shouldIgnoreContinuationLine(line: string, section: Exclude<Section, null>): boolean {
-    if (line.startsWith('**פ.עמלה')) {
+    const compactLine = this.compactForDetection(line);
+
+    if (compactLine.startsWith('**פ.עמלה')) {
       return true;
     }
 
-    if (line.startsWith('סה"כחיובלתאריך')) {
+    if (compactLine.startsWith('סה"כחיובלתאריך')) {
       return true;
     }
 
     if (section === 'foreign') {
-      return line.includes('סכוםהחיוב') || line.includes('סכוםעמלה');
+      return compactLine.includes('סכוםהחיוב') || compactLine.includes('סכוםעמלה');
     }
 
     if (
       line.startsWith('*') ||
       line.startsWith('מספר חשבון:') ||
-      /^עמוד\d+מתוך\d+$/.test(line) ||
-      line.includes('TOP-CASH') ||
-      line.includes('הקודהסודי')
+      /^עמוד\s*\d+\s*מתוך\s*\d+$/u.test(line) ||
+      compactLine.includes('TOP-CASH') ||
+      compactLine.includes('הקודהסודי') ||
+      IsracardPdfParser.DOMESTIC_PROMO_MARKERS.some(marker => compactLine.includes(marker))
     ) {
       return true;
     }
@@ -199,11 +232,11 @@ export class IsracardPdfParser {
       'החיוב',
       'בש"ח',
       'פירוטנוסף',
-    ].includes(line);
+    ].includes(compactLine);
   }
 
   private isDomesticTotalLine(line: string): boolean {
-    return line.startsWith('סה"כחיובלתאריך');
+    return this.compactForDetection(line).startsWith('סה"כחיובלתאריך');
   }
 
   private parseForeignChunk(chunkLines: string[]): PdfTransaction | null {
@@ -240,7 +273,7 @@ export class IsracardPdfParser {
   }
 
   private parseDomesticChunk(chunkLines: string[]): PdfTransaction | null {
-    const chunk = chunkLines.join('');
+    const chunk = chunkLines.join(' ');
     const dateMatch = chunk.match(/^(\d{2}\/\d{2}\/\d{2})/);
 
     if (!dateMatch) {
@@ -290,8 +323,9 @@ export class IsracardPdfParser {
     let cleaned = value;
 
     for (const prefix of IsracardPdfParser.DOMESTIC_PREFIXES) {
-      if (cleaned.startsWith(prefix)) {
-        cleaned = cleaned.slice(prefix.length);
+      const pattern = this.flexibleSpacingPattern(prefix, { start: true });
+      if (pattern.test(cleaned)) {
+        cleaned = cleaned.replace(pattern, '');
         break;
       }
     }
@@ -300,11 +334,16 @@ export class IsracardPdfParser {
   }
 
   private stripCategorySuffix(value: string): string {
-    const suffix = [...IsracardPdfParser.DOMESTIC_CATEGORY_SUFFIXES]
-      .sort((left, right) => right.length - left.length)
-      .find(category => value.endsWith(category));
+    for (const category of [...IsracardPdfParser.DOMESTIC_CATEGORY_SUFFIXES].sort(
+      (left, right) => right.length - left.length
+    )) {
+      const pattern = this.flexibleSpacingPattern(category, { end: true });
+      if (pattern.test(value)) {
+        return value.replace(pattern, '').trim();
+      }
+    }
 
-    return suffix ? value.slice(0, -suffix.length).trim() : value.trim();
+    return value.trim();
   }
 
   private formatDomesticExtra(value: string): string {

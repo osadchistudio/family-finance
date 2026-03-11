@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { FileParserService } from '@/services/parsers/FileParserService';
 import { KeywordCategorizer } from '@/services/categorization/KeywordCategorizer';
 import { RecurringKeywordMatcher } from '@/services/categorization/RecurringKeywordMatcher';
+import { isLikelySameMerchant } from '@/lib/merchantSimilarity';
 
 export class TelegramBotService {
   private bot: Telegraf;
@@ -276,10 +277,20 @@ export class TelegramBotService {
     await keywordCategorizer.loadKeywords();
     const recurringMatcher = new RecurringKeywordMatcher();
     await recurringMatcher.loadKeywords();
+    const historicalCandidates = await keywordCategorizer.loadHistoricalCandidates();
 
     const existingTransactions = await prisma.transaction.findMany({
       where: { accountId: account.id },
-      select: { id: true, date: true, amount: true, description: true, reference: true },
+      select: {
+        id: true,
+        date: true,
+        amount: true,
+        description: true,
+        reference: true,
+        categoryId: true,
+        isRecurring: true,
+        merchantName: true,
+      },
     });
 
     const existingKeysByContent = new Set(
@@ -290,7 +301,21 @@ export class TelegramBotService {
         .filter((tx) => tx.reference)
         .map((tx) => [tx.reference!, tx])
     );
+    const existingByDateAmount = new Map<string, typeof existingTransactions>();
+    for (const tx of existingTransactions) {
+      const key = `${tx.date.toISOString()}_${Number(tx.amount).toFixed(2)}`;
+      const bucket = existingByDateAmount.get(key) ?? [];
+      bucket.push(tx);
+      existingByDateAmount.set(key, bucket);
+    }
     const seenRefsInFile = new Set<string>();
+    const existingTransactionsToFix = new Map<string, Prisma.TransactionUncheckedUpdateInput>();
+    const queueExistingUpdate = (id: string, data: Prisma.TransactionUncheckedUpdateInput) => {
+      existingTransactionsToFix.set(id, {
+        ...(existingTransactionsToFix.get(id) ?? {}),
+        ...data,
+      });
+    };
 
     // Create file upload record
     const fileUpload = await prisma.fileUpload.create({
@@ -307,6 +332,12 @@ export class TelegramBotService {
     // Process transactions
     for (const tx of transactions) {
       try {
+        const categorizationResult = await keywordCategorizer.categorize(tx.description, {
+          historicalCandidates,
+        });
+        const categoryId = categorizationResult?.categoryId || null;
+        const isRecurring = await recurringMatcher.match(tx.description);
+
         if (tx.reference) {
           if (seenRefsInFile.has(tx.reference)) {
             duplicates++;
@@ -321,15 +352,50 @@ export class TelegramBotService {
               Math.abs(Math.abs(existingAmount) - Math.abs(incomingAmount)) < AMOUNT_EPSILON;
             const signChanged = Math.sign(existingAmount) !== Math.sign(incomingAmount);
 
-            if (!sameAbsoluteAmount || !signChanged) {
-              duplicates++;
-              continue;
+            if (sameAbsoluteAmount && signChanged) {
+              queueExistingUpdate(existing.id, {
+                amount: incomingAmount,
+                date: tx.date,
+                valueDate: tx.valueDate || null,
+                description: tx.description,
+                merchantName: tx.description,
+                reference: tx.reference || null,
+                ...(categoryId
+                  ? {
+                      categoryId,
+                      isAutoCategorized: true,
+                    }
+                  : {}),
+                ...(isRecurring ? { isRecurring: true } : {}),
+              });
             }
+
+            duplicates++;
+            continue;
           }
         }
 
         const contentKey = `${tx.date.toISOString()}_${tx.amount}_${tx.description}`;
         if (existingKeysByContent.has(contentKey)) {
+          const exactExisting = existingTransactions.find(
+            (existing) =>
+              existing.date.toISOString() === tx.date.toISOString() &&
+              Math.abs(Number(existing.amount) - tx.amount) < AMOUNT_EPSILON &&
+              existing.description === tx.description
+          );
+          if (exactExisting) {
+            if (!exactExisting.categoryId && categoryId) {
+              queueExistingUpdate(exactExisting.id, {
+                categoryId,
+                isAutoCategorized: true,
+              });
+            }
+            if (!exactExisting.isRecurring && isRecurring) {
+              queueExistingUpdate(exactExisting.id, {
+                isRecurring: true,
+              });
+            }
+          }
           duplicates++;
           continue;
         }
@@ -339,20 +405,41 @@ export class TelegramBotService {
           seenRefsInFile.add(tx.reference);
         }
 
-        // Auto-categorize
-        const categorizationResult = await keywordCategorizer.categorize(tx.description);
-        const categoryId = categorizationResult?.categoryId || null;
-        const isRecurring = await recurringMatcher.match(tx.description);
-        if (!categoryId) {
-          uncategorized++;
+        const similarExisting = (existingByDateAmount.get(
+          `${tx.date.toISOString()}_${tx.amount.toFixed(2)}`
+        ) ?? []).find((existing) => isLikelySameMerchant(existing.description, tx.description));
+        if (similarExisting) {
+          if (!similarExisting.categoryId && categoryId) {
+            queueExistingUpdate(similarExisting.id, {
+              categoryId,
+              isAutoCategorized: true,
+            });
+          }
+          if (!similarExisting.isRecurring && isRecurring) {
+            queueExistingUpdate(similarExisting.id, {
+              isRecurring: true,
+            });
+          }
+          if (!similarExisting.description.includes(' ') && tx.description.includes(' ')) {
+            queueExistingUpdate(similarExisting.id, {
+              description: tx.description,
+              merchantName: tx.description,
+            });
+          }
+          duplicates++;
+          continue;
         }
 
         // Create transaction
+        if (!categoryId) {
+          uncategorized++;
+        }
         await prisma.transaction.create({
           data: {
             date: tx.date,
             valueDate: tx.valueDate || null,
             description: tx.description,
+            merchantName: tx.description,
             amount: tx.amount,
             reference: tx.reference || null,
             accountId: account.id,
@@ -376,6 +463,15 @@ export class TelegramBotService {
           const reason = error instanceof Error ? error.message : 'שגיאה לא ידועה';
           errorDetails.push(`${tx.description} — ${reason}`);
         }
+      }
+    }
+
+    if (existingTransactionsToFix.size > 0) {
+      for (const [id, data] of existingTransactionsToFix) {
+        await prisma.transaction.update({
+          where: { id },
+          data,
+        });
       }
     }
 

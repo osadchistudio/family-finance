@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { compactText, normalizeText } from '@/lib/merchantSimilarity';
 
 export class RecurringKeywordMatcher {
   private keywords: string[] = [];
@@ -18,16 +19,14 @@ export class RecurringKeywordMatcher {
 
   async match(description: string): Promise<boolean> {
     await this.ensureLoaded();
-    const normalized = this.normalize(description);
-    return this.keywords.some(kw => normalized.includes(kw));
-  }
+    const normalized = normalizeText(description);
+    const compact = compactText(description);
 
-  private normalize(text: string): string {
-    return text
-      .toLowerCase()
-      .replace(/[^\u0590-\u05FFa-z0-9\s]/g, '') // Keep Hebrew, alphanumeric, and spaces
-      .replace(/\s+/g, ' ')
-      .trim();
+    return this.keywords.some((kw) => {
+      const normalizedKeyword = normalizeText(kw);
+      const compactKeyword = compactText(kw);
+      return normalized.includes(normalizedKeyword) || compact.includes(compactKeyword);
+    });
   }
 
   async refresh(): Promise<void> {

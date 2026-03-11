@@ -10,7 +10,7 @@ import { smartColumnDetector, DetectedColumns } from './SmartColumnDetector';
 import { parseAmount } from '@/lib/formatters';
 import { BankHapoalimPdfParser } from './BankHapoalimPdfParser';
 import { IsracardPdfParser } from './IsracardPdfParser';
-import { extractPdfPages } from './pdfText';
+import { extractPdfPages, extractPdfPagesWithPdfParse } from './pdfText';
 
 dayjs.extend(customParseFormat);
 
@@ -492,11 +492,20 @@ export class FileParserService {
       let result;
 
       if (isracardPdfParser.isIsracard(fullText)) {
-        result = await isracardPdfParser.parse(buffer, pages);
+        result = await isracardPdfParser.parse(buffer);
       } else if (bankHapoalimPdfParser.isBankHapoalim(fullText)) {
         result = await bankHapoalimPdfParser.parse(buffer, pages);
       } else {
-        throw new Error(`פורמט PDF לא נתמך: ${filename}`);
+        const fallbackPages = await extractPdfPagesWithPdfParse(buffer);
+        const fallbackText = fallbackPages.join('\n');
+
+        if (isracardPdfParser.isIsracard(fallbackText)) {
+          result = await isracardPdfParser.parse(buffer, fallbackPages);
+        } else if (bankHapoalimPdfParser.isBankHapoalim(fallbackText)) {
+          result = await bankHapoalimPdfParser.parse(buffer, fallbackPages);
+        } else {
+          throw new Error(`פורמט PDF לא נתמך: ${filename}`);
+        }
       }
 
       // Convert PDF transactions to ParsedTransaction format

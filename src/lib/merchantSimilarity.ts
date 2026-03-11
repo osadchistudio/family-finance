@@ -6,7 +6,7 @@ const GENERIC_TOKENS = new Set([
   'מסטרקארד', 'cal', 'max', 'הוראת', 'קבע', 'העב', 'חיובים'
 ]);
 
-function normalizeText(value: string): string {
+export function normalizeText(value: string): string {
   return value
     .toLowerCase()
     .replace(/[\u0591-\u05C7]/g, '') // remove Hebrew niqqud/marks
@@ -25,8 +25,34 @@ function getMerchantTokens(value: string): string[] {
     .filter(token => !GENERIC_TOKENS.has(token));
 }
 
-function compact(value: string): string {
+export function compactText(value: string): string {
   return normalizeText(value).replace(/\s+/g, '');
+}
+
+function diceCoefficient(left: string, right: string): number {
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  if (left.length < 2 || right.length < 2) {
+    return left === right ? 1 : 0;
+  }
+
+  const pairs = new Map<string, number>();
+  for (let index = 0; index < left.length - 1; index++) {
+    const pair = left.slice(index, index + 2);
+    pairs.set(pair, (pairs.get(pair) ?? 0) + 1);
+  }
+
+  let intersection = 0;
+  for (let index = 0; index < right.length - 1; index++) {
+    const pair = right.slice(index, index + 2);
+    const count = pairs.get(pair) ?? 0;
+    if (count > 0) {
+      intersection++;
+      pairs.set(pair, count - 1);
+    }
+  }
+
+  return (2 * intersection) / ((left.length - 1) + (right.length - 1));
 }
 
 export function extractMerchantSignature(description: string): string | null {
@@ -44,44 +70,45 @@ export function extractMerchantSignature(description: string): string | null {
   return first;
 }
 
-export function isLikelySameMerchant(sourceDescription: string, candidateDescription: string): boolean {
+export function merchantSimilarityScore(sourceDescription: string, candidateDescription: string): number {
   const sourceNormalized = normalizeText(sourceDescription);
   const candidateNormalized = normalizeText(candidateDescription);
 
-  if (!sourceNormalized || !candidateNormalized) return false;
-  if (sourceNormalized === candidateNormalized) return true;
+  if (!sourceNormalized || !candidateNormalized) return 0;
+  if (sourceNormalized === candidateNormalized) return 1;
+
+  const sourceCompact = compactText(sourceDescription);
+  const candidateCompact = compactText(candidateDescription);
+  if (!sourceCompact || !candidateCompact) return 0;
+  if (sourceCompact === candidateCompact) return 1;
 
   const sourceSignature = extractMerchantSignature(sourceDescription);
   const candidateSignature = extractMerchantSignature(candidateDescription);
-
   if (sourceSignature && candidateSignature) {
-    if (sourceSignature === candidateSignature) return true;
-    if (compact(sourceSignature) === compact(candidateSignature)) return true;
+    if (sourceSignature === candidateSignature) return 0.98;
+    if (compactText(sourceSignature) === compactText(candidateSignature)) return 0.97;
   }
 
-  if (sourceSignature && sourceSignature.length >= 3) {
-    if (candidateNormalized.startsWith(`${sourceSignature} `) || candidateNormalized.includes(` ${sourceSignature} `)) {
-      return true;
-    }
-  }
-
-  if (candidateSignature && candidateSignature.length >= 3) {
-    if (sourceNormalized.startsWith(`${candidateSignature} `) || sourceNormalized.includes(` ${candidateSignature} `)) {
-      return true;
-    }
+  const compactDice = diceCoefficient(sourceCompact, candidateCompact);
+  if (
+    compactDice >= 0.92 &&
+    Math.abs(sourceCompact.length - candidateCompact.length) <= 2
+  ) {
+    return compactDice;
   }
 
   const sourceTokens = getMerchantTokens(sourceDescription);
   const candidateTokens = getMerchantTokens(candidateDescription);
-  if (sourceTokens.length === 0 || candidateTokens.length === 0) return false;
-
-  if (sourceTokens[0] === candidateTokens[0] && sourceTokens[0].length >= 3) {
-    return true;
+  if (sourceTokens.length > 0 && candidateTokens.length > 0) {
+    const sourceSet = new Set(sourceTokens);
+    const overlap = candidateTokens.filter(token => sourceSet.has(token)).length;
+    const overlapRatio = overlap / Math.max(sourceTokens.length, candidateTokens.length);
+    return Math.max(compactDice, overlapRatio);
   }
 
-  const sourceSet = new Set(sourceTokens);
-  const overlap = candidateTokens.filter(token => sourceSet.has(token)).length;
-  const overlapRatio = overlap / Math.max(sourceTokens.length, candidateTokens.length);
+  return compactDice;
+}
 
-  return overlapRatio >= 0.6;
+export function isLikelySameMerchant(sourceDescription: string, candidateDescription: string): boolean {
+  return merchantSimilarityScore(sourceDescription, candidateDescription) >= 0.84;
 }

@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-03-07
+Last updated: 2026-03-11
 
 ## Scope (Canonical)
 This document is **only** for the `family-finance` web application
@@ -84,6 +84,8 @@ Out of scope:
 ### Upload and parsing
 - CSV/XLS/XLSX/PDF parsing pipeline
 - PDF parsing supports Bank Hapoalim account statements and Isracard billing PDFs
+- Isracard PDF parsing now uses `pdf-parse` extraction instead of `unpdf` because `unpdf` collapsed Hebrew merchant-name spaces in this PDF type
+- Re-uploading the same Isracard PDF after the parser fix can repair previously imported compacted descriptions by upgrading matching existing rows in-place
 - Consolidated credit-card charge rows in bank files are skipped to prevent double counting
 - Amount sign parsing hardened (debit/credit correctness and edge minus formats)
 - File uploads now track source metadata (`WEB` / `TELEGRAM`)
@@ -175,6 +177,38 @@ Out of scope:
   - use `שלח בדיקה עכשיו` in `/settings`
 
 ## Consolidated change log (major milestones)
+
+### 2026-03-11 - Fixed Isracard PDF merchant spacing for web and Telegram uploads
+Why:
+- Recent Isracard PDF uploads collapsed Hebrew spaces inside merchant names (for example `מרכוליתהגשר` instead of `מרכולית הגשר`), which broke keyword categorization and left valid transactions uncategorized
+
+What changed:
+- Switched Isracard PDF text extraction to `pdf-parse` because it preserves spaces correctly for this PDF format
+- Hardened Isracard header/section detection to work with spaced text extraction
+- Stopped joining domestic PDF chunk lines without spaces
+- Filtered known Isracard promotional continuation text so it no longer appends into merchant descriptions
+- Strengthened merchant-similarity matching and historical categorization fallback so compact historical descriptions can still match spaced future imports
+- Upgraded duplicate reconciliation in both web upload and Telegram upload flows so re-uploading the corrected file can patch existing compacted rows in-place
+- Added `pdf-parse` as an explicit production dependency
+
+Files touched:
+- `/src/services/parsers/pdfText.ts`
+- `/src/services/parsers/IsracardPdfParser.ts`
+- `/src/services/parsers/FileParserService.ts`
+- `/src/lib/merchantSimilarity.ts`
+- `/src/services/categorization/KeywordCategorizer.ts`
+- `/src/services/categorization/RecurringKeywordMatcher.ts`
+- `/src/app/api/upload/route.ts`
+- `/src/services/telegram/TelegramBotService.ts`
+- `/package.json`
+- `/package-lock.json`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy required
+- No DB migration
+- Requires `npm install` on deploy because `pdf-parse` was added as a direct dependency
+- Existing compacted Isracard rows can be repaired by re-uploading the same PDF after deploy
 
 ### 2026-03-07 - Telegram reminder engine MVP
 Why:

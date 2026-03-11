@@ -3,7 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { fileParserService } from '@/services/parsers/FileParserService';
 import { keywordCategorizer } from '@/services/categorization/KeywordCategorizer';
 import { recurringKeywordMatcher } from '@/services/categorization/RecurringKeywordMatcher';
-import { Institution } from '@prisma/client';
+import { Institution, Prisma } from '@prisma/client';
+import { isLikelySameMerchant } from '@/lib/merchantSimilarity';
 
 const AMOUNT_EPSILON = 0.01;
 
@@ -92,7 +93,16 @@ export async function POST(request: NextRequest) {
     // Get existing transactions for duplicate check (batch query)
     const existingTransactions = await prisma.transaction.findMany({
       where: { accountId: account.id },
-      select: { id: true, date: true, amount: true, description: true, reference: true }
+      select: {
+        id: true,
+        date: true,
+        amount: true,
+        description: true,
+        reference: true,
+        categoryId: true,
+        isRecurring: true,
+        merchantName: true,
+      }
     });
 
     // Create Sets/Maps for fast duplicate lookup and correction by reference
@@ -106,27 +116,39 @@ export async function POST(request: NextRequest) {
         .filter(tx => tx.reference)
         .map(tx => [tx.reference!, tx])
     );
+    const existingByDateAmount = new Map<string, typeof existingTransactions>();
+    for (const tx of existingTransactions) {
+      const key = `${tx.date.toISOString()}_${Number(tx.amount).toFixed(2)}`;
+      const bucket = existingByDateAmount.get(key) ?? [];
+      bucket.push(tx);
+      existingByDateAmount.set(key, bucket);
+    }
     const seenRefsInFile = new Set<string>();
+    const historicalCandidates = await keywordCategorizer.loadHistoricalCandidates();
 
     // Filter out duplicates and prepare batch data
     const transactionsToCreate = [];
-    const existingTransactionsToFix: Array<{
-      id: string;
-      data: {
-        amount: number;
-        date: Date;
-        valueDate: Date | null;
-        description: string;
-        categoryId: null;
-        isAutoCategorized: false;
-        isRecurring: false;
-      };
-    }> = [];
+    const existingTransactionsToFix = new Map<string, Prisma.TransactionUncheckedUpdateInput>();
     let duplicates = 0;
     let correctedExisting = 0;
     const fixedTransactionIds = new Set<string>();
+    const queueExistingUpdate = (id: string, data: Prisma.TransactionUncheckedUpdateInput) => {
+      if (!existingTransactionsToFix.has(id)) {
+        correctedExisting++;
+      }
+
+      existingTransactionsToFix.set(id, {
+        ...(existingTransactionsToFix.get(id) ?? {}),
+        ...data,
+      });
+    };
 
     for (const tx of parseResult.transactions) {
+      const categorization = await keywordCategorizer.categorize(tx.description, {
+        historicalCandidates,
+      });
+      const isRecurring = await recurringKeywordMatcher.match(tx.description);
+
       // Check duplicate by reference (voucher number) first - most reliable
       if (tx.reference) {
         if (seenRefsInFile.has(tx.reference)) {
@@ -144,20 +166,22 @@ export async function POST(request: NextRequest) {
           // If same voucher exists with same absolute amount but opposite sign,
           // treat it as a historical sign bug and fix the existing row in-place.
           if (sameAbsoluteAmount && signChanged && !fixedTransactionIds.has(existing.id)) {
-            existingTransactionsToFix.push({
-              id: existing.id,
-              data: {
-                amount: incomingAmount,
-                date: tx.date,
-                valueDate: tx.valueDate || null,
-                description: tx.description,
-                categoryId: null,
-                isAutoCategorized: false,
-                isRecurring: false,
-              },
+            queueExistingUpdate(existing.id, {
+              amount: incomingAmount,
+              date: tx.date,
+              valueDate: tx.valueDate || null,
+              description: tx.description,
+              merchantName: tx.description,
+              reference: tx.reference || null,
+              ...(categorization
+                ? {
+                    categoryId: categorization.categoryId,
+                    isAutoCategorized: true,
+                  }
+                : {}),
+              ...(isRecurring ? { isRecurring: true } : {}),
             });
             fixedTransactionIds.add(existing.id);
-            correctedExisting++;
           }
 
           duplicates++;
@@ -168,6 +192,55 @@ export async function POST(request: NextRequest) {
       // Fallback: check by content
       const key = `${tx.date.toISOString()}_${tx.amount}_${tx.description}`;
       if (existingKeysByContent.has(key)) {
+        const exactExisting = existingTransactions.find(existing =>
+          existing.date.toISOString() === tx.date.toISOString() &&
+          Math.abs(Number(existing.amount) - tx.amount) < AMOUNT_EPSILON &&
+          existing.description === tx.description
+        );
+        if (exactExisting) {
+          if (!exactExisting.categoryId && categorization) {
+            queueExistingUpdate(exactExisting.id, {
+              categoryId: categorization.categoryId,
+              isAutoCategorized: true,
+            });
+          }
+          if (!exactExisting.isRecurring && isRecurring) {
+            queueExistingUpdate(exactExisting.id, {
+              isRecurring: true,
+            });
+          }
+        }
+        duplicates++;
+        continue;
+      }
+
+      const dateAmountKey = `${tx.date.toISOString()}_${tx.amount.toFixed(2)}`;
+      const similarExisting = (existingByDateAmount.get(dateAmountKey) ?? []).find(existing =>
+        isLikelySameMerchant(existing.description, tx.description)
+      );
+      if (similarExisting) {
+        const shouldUpgradeDescription =
+          !similarExisting.description.includes(' ') &&
+          tx.description.includes(' ');
+
+        if (!similarExisting.categoryId && categorization) {
+          queueExistingUpdate(similarExisting.id, {
+            categoryId: categorization.categoryId,
+            isAutoCategorized: true,
+          });
+        }
+        if (!similarExisting.isRecurring && isRecurring) {
+          queueExistingUpdate(similarExisting.id, {
+            isRecurring: true,
+          });
+        }
+        if (shouldUpgradeDescription) {
+          queueExistingUpdate(similarExisting.id, {
+            description: tx.description,
+            merchantName: tx.description,
+          });
+        }
+
         duplicates++;
         continue;
       }
@@ -176,12 +249,6 @@ export async function POST(request: NextRequest) {
       existingKeysByContent.add(key);
       if (tx.reference) seenRefsInFile.add(tx.reference);
 
-      // Categorize (sync operation - no DB call)
-      const categorization = await keywordCategorizer.categorize(tx.description);
-
-      // Check if this is a recurring expense
-      const isRecurring = await recurringKeywordMatcher.match(tx.description);
-
       transactionsToCreate.push({
         accountId: account.id,
         fileUploadId: fileUpload.id,
@@ -189,6 +256,7 @@ export async function POST(request: NextRequest) {
         valueDate: tx.valueDate,
         amount: tx.amount,
         description: tx.description,
+        merchantName: tx.description,
         reference: tx.reference,
         categoryId: categorization?.categoryId || null,
         isAutoCategorized: categorization !== null,
@@ -204,11 +272,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Apply in-place fixes for existing records with wrong sign
-    if (existingTransactionsToFix.length > 0) {
-      for (const fix of existingTransactionsToFix) {
+    if (existingTransactionsToFix.size > 0) {
+      for (const [id, data] of existingTransactionsToFix) {
         await prisma.transaction.update({
-          where: { id: fix.id },
-          data: fix.data,
+          where: { id },
+          data,
         });
       }
     }

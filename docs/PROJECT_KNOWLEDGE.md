@@ -691,3 +691,27 @@ Deploy/runtime impact:
 - Normal deploy
 - No DB migration
 - The new button appears only when uncategorized transactions exist
+
+### 2026-03-12 - Added safe delete-by-upload flow on the uploads screen
+Why:
+- Deleting only uncategorized transactions was not enough when a problematic file had already created categorized duplicates or partially cleaned data
+- Users needed a precise reset tool that removes one upload and only the transactions linked to that upload, so the same file can be re-imported cleanly without touching unrelated data
+
+What changed:
+- Added a dedicated `DELETE /api/upload/[id]` endpoint
+- The endpoint deletes only transactions whose `fileUploadId` matches the selected upload, and only then deletes the upload record itself
+- Revalidated upload, dashboard, transactions, monthly summary, recurring, and tips pages after deletion
+- Reworked the recent uploads section into a client component with a `מחק העלאה` action per upload
+- Added a confirmation modal that shows file name, source, account, upload time, and exact linked transaction count before deletion
+- Added display of `transactionCount` per upload in the recent uploads list, alongside the original parsed row count
+
+Files touched:
+- `/src/app/api/upload/[id]/route.ts`
+- `/src/components/upload/RecentUploadsList.tsx`
+- `/src/app/upload/page.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- Upload deletion is now available from `/upload` and only affects transactions linked to the selected upload

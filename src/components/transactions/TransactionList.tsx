@@ -460,6 +460,7 @@ export function TransactionList({
   const [manualIsRecurring, setManualIsRecurring] = useState(false);
   const [autoCategorizingTxId, setAutoCategorizingTxId] = useState<string | null>(null);
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
+  const [isDeletingUncategorized, setIsDeletingUncategorized] = useState(false);
   const [activeSuggestionKey, setActiveSuggestionKey] = useState<string | null>(null);
   const [snoozingSuggestionKey, setSnoozingSuggestionKey] = useState<string | null>(null);
   const [snoozedSuggestionExpirations, setSnoozedSuggestionExpirations] = useState<SnoozedSuggestionMap>(initialSnoozedSuggestionExpirations);
@@ -604,6 +605,11 @@ export function TransactionList({
     const matchesMonth = !selectedMonth || dayjs(tx.date).format('YYYY-MM') === selectedMonth;
     return matchesSearch && matchesCategory && matchesAccount && matchesAmountType && matchesMonth;
   });
+  const filteredUncategorizedTransactions = useMemo(
+    () => filteredTransactions.filter((tx) => !tx.categoryId),
+    [filteredTransactions]
+  );
+  const filteredUncategorizedCount = filteredUncategorizedTransactions.length;
 
   const renderedListTransactions = useMemo(
     () => filteredTransactions.slice(0, listRenderLimit),
@@ -1552,6 +1558,46 @@ export function TransactionList({
     }
   };
 
+  const handleDeleteUncategorized = async () => {
+    if (isDeletingUncategorized || filteredUncategorizedCount === 0) return;
+
+    const confirmed = window.confirm(
+      `למחוק ${filteredUncategorizedCount} תנועות לא מסווגות מתוך התצוגה הנוכחית?\n\n` +
+      'הפעולה תמחק רק תנועות שאין להן קטגוריה, לפי הפילטרים שמוגדרים עכשיו.'
+    );
+
+    if (!confirmed) return;
+
+    setIsDeletingUncategorized(true);
+    try {
+      const response = await fetch('/api/transactions/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'uncategorized',
+          transactionIds: filteredUncategorizedTransactions.map((tx) => tx.id),
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result?.error || 'Failed to delete uncategorized transactions');
+      }
+
+      const deletedIds = new Set<string>(Array.isArray(result?.deletedIds) ? result.deletedIds : []);
+      if (deletedIds.size > 0) {
+        setTransactions((prev) => prev.filter((tx) => !deletedIds.has(tx.id)));
+      }
+
+      showToast(`נמחקו ${Number(result?.deleted || 0)} תנועות לא מסווגות`, 'success');
+    } catch (error) {
+      console.error('Bulk uncategorized delete error:', error);
+      showToast('שגיאה במחיקת תנועות לא מסווגות', 'error');
+    } finally {
+      setIsDeletingUncategorized(false);
+    }
+  };
+
   const handleAutoCategorizeSingle = async (tx: Transaction) => {
     if (autoCategorizingTxId || deletingTransactionId) return;
 
@@ -1764,30 +1810,58 @@ export function TransactionList({
 
         {/* Auto-categorize button */}
         {uncategorizedCount > 0 && (
-          <button
-            onClick={handleAutoCategorize}
-            disabled={isAutoCategorizing}
-            className={`
-              w-full sm:w-auto px-4 py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium
-              transition-all
-              ${isAutoCategorizing
-                ? 'bg-purple-100 text-purple-400 cursor-not-allowed'
-                : 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm hover:shadow'
-              }
-            `}
-          >
-            {isAutoCategorizing ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                מזהה עסקים...
-              </>
-            ) : (
-              <>
-                <Wand2 className="h-4 w-4" />
-                זהה וסווג אוטומטית ({uncategorizedCount})
-              </>
-            )}
-          </button>
+          <>
+            <button
+              onClick={handleAutoCategorize}
+              disabled={isAutoCategorizing}
+              className={`
+                w-full sm:w-auto px-4 py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium
+                transition-all
+                ${isAutoCategorizing
+                  ? 'bg-purple-100 text-purple-400 cursor-not-allowed'
+                  : 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm hover:shadow'
+                }
+              `}
+            >
+              {isAutoCategorizing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  מזהה עסקים...
+                </>
+              ) : (
+                <>
+                  <Wand2 className="h-4 w-4" />
+                  זהה וסווג אוטומטית ({uncategorizedCount})
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleDeleteUncategorized}
+              disabled={isDeletingUncategorized || filteredUncategorizedCount === 0}
+              className={`
+                w-full sm:w-auto px-4 py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium
+                transition-all border
+                ${isDeletingUncategorized || filteredUncategorizedCount === 0
+                  ? 'border-red-200 bg-red-50 text-red-300 cursor-not-allowed'
+                  : 'border-red-200 text-red-700 hover:bg-red-50'
+                }
+              `}
+              title="מחק תנועות לא מסווגות מתוך התצוגה הנוכחית"
+            >
+              {isDeletingUncategorized ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  מוחק...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  מחק לא מסווגות ({filteredUncategorizedCount})
+                </>
+              )}
+            </button>
+          </>
         )}
 
         <button

@@ -671,3 +671,23 @@ Deploy/runtime impact:
 - Normal deploy
 - No DB migration
 - Recommended to re-test long-press / right-click merchant rename on production after deploy
+
+### 2026-03-12 - Added bulk delete for uncategorized transactions from the current transactions view
+Why:
+- Some malformed PDF imports produced many uncategorized rows, and editing each merchant manually was too slow
+- Users needed a safe reset path to remove only the currently visible uncategorized transactions and re-upload corrected source files
+
+What changed:
+- Extended the bulk delete API with a new `uncategorized` mode that deletes only explicitly provided transaction IDs that still have no category
+- Added a new transactions toolbar action, `מחק לא מסווגות`, which deletes uncategorized transactions from the current filtered view after confirmation
+- Kept the deletion scoped to the visible filtered set instead of deleting all uncategorized rows system-wide, to reduce accidental data loss
+
+Files touched:
+- `/src/app/api/transactions/bulk-delete/route.ts`
+- `/src/components/transactions/TransactionList.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- The new button appears only when uncategorized transactions exist

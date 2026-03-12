@@ -55,6 +55,58 @@ export async function POST(request: NextRequest) {
     const mode = body?.mode;
     const accountId = typeof body?.accountId === 'string' && body.accountId.trim() ? body.accountId : null;
     const month = typeof body?.month === 'string' && body.month.trim() ? body.month : null;
+    const rawIds: unknown[] = Array.isArray(body?.transactionIds) ? body.transactionIds : [];
+    const transactionIds = Array.from(
+      new Set(
+        rawIds
+          .filter((value): value is string => typeof value === 'string')
+          .map((value) => value.trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (mode === 'uncategorized') {
+      if (transactionIds.length === 0) {
+        return NextResponse.json(
+          { error: 'No uncategorized transaction IDs were provided' },
+          { status: 400 }
+        );
+      }
+
+      const existingTransactions = await prisma.transaction.findMany({
+        where: {
+          id: { in: transactionIds },
+          categoryId: null,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      const idsToDelete = existingTransactions.map((tx) => tx.id);
+
+      if (idsToDelete.length === 0) {
+        return NextResponse.json({
+          success: true,
+          deleted: 0,
+          deletedIds: [],
+          scanned: transactionIds.length,
+        });
+      }
+
+      await prisma.transaction.deleteMany({
+        where: {
+          id: { in: idsToDelete },
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        deleted: idsToDelete.length,
+        deletedIds: idsToDelete,
+        scanned: transactionIds.length,
+      });
+    }
 
     if (mode !== 'consolidatedCardCharges') {
       return NextResponse.json(
@@ -125,4 +177,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

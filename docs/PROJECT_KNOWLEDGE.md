@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-03-11
+Last updated: 2026-03-12
 
 ## Scope (Canonical)
 This document is **only** for the `family-finance` web application
@@ -75,6 +75,10 @@ Out of scope:
   - amount-type filter (all / income / expense)
   - amount search (works for income + expense)
   - notes editing
+  - transaction-description editing from the transactions UI
+    - mobile: long-press on the transaction name
+    - desktop: right-click on the transaction name
+    - optional bulk propagation to similar transactions from the same merchant family
 
 ### Category assignment intelligence
 - Merchant-family similarity matching is used (not only exact description)
@@ -177,6 +181,30 @@ Out of scope:
   - use `שלח בדיקה עכשיו` in `/settings`
 
 ## Consolidated change log (major milestones)
+
+### 2026-03-12 - Added manual transaction-name editing from the transactions UI
+Why:
+- Some uploaded merchants still need manual cleanup, especially when external statements merge Hebrew words or produce inconsistent merchant variants
+- The product already supports bulk category learning, but there was no direct way to fix the raw transaction description itself
+
+What changed:
+- Added a new `PATCH /api/transactions/[id]/description` endpoint for updating the transaction description and merchant name together
+- Added optional propagation to similar transactions from the same merchant family, with a safety cap to prevent over-broad bulk edits
+- Added a new transactions UI interaction model for editing names without adding persistent extra controls:
+  - mobile long-press on transaction name
+  - desktop right-click on transaction name
+- Added a dedicated edit modal that previews the current name, lets the user set a new value, and optionally apply the change to similar rows
+
+Files touched:
+- `/src/app/api/transactions/[id]/description/route.ts`
+- `/src/components/transactions/TransactionList.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy required
+- No DB migration
+- No new environment variables
+- After deploy, transaction names can be fixed manually in-place and optionally propagated to similar transactions
 
 ### 2026-03-11 - Fixed Isracard PDF merchant spacing for web and Telegram uploads
 Why:

@@ -108,6 +108,12 @@ interface RecurringSuggestionCluster {
   recurringTransactions: Transaction[];
 }
 
+interface DescriptionEditTriggerProps {
+  value: string;
+  onEdit: () => void;
+  className?: string;
+}
+
 const AMOUNT_MATCH_EPSILON = 0.01;
 const RECURRING_SUGGESTION_AMOUNT_TOLERANCE = 10;
 const RECURRING_SUGGESTION_MIN_PERIODS = 3;
@@ -118,6 +124,67 @@ const RECURRING_SNOOZE_DEFAULT_DAYS = 30;
 const RECURRING_SNOOZE_LONG_DAYS = 90;
 const LIST_INITIAL_RENDER_LIMIT = 120;
 const LIST_RENDER_STEP = 120;
+
+function DescriptionEditTrigger({
+  value,
+  onEdit,
+  className = '',
+}: DescriptionEditTriggerProps) {
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
+
+  const clearLongPress = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => () => {
+    clearLongPress();
+  }, []);
+
+  return (
+    <button
+      type="button"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onEdit();
+      }}
+      onTouchStart={() => {
+        clearLongPress();
+        longPressTriggeredRef.current = false;
+        longPressTimerRef.current = window.setTimeout(() => {
+          longPressTriggeredRef.current = true;
+          if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+            navigator.vibrate(10);
+          }
+          onEdit();
+        }, 450);
+      }}
+      onTouchEnd={(event) => {
+        clearLongPress();
+        if (longPressTriggeredRef.current) {
+          event.preventDefault();
+          longPressTriggeredRef.current = false;
+        }
+      }}
+      onTouchMove={clearLongPress}
+      onTouchCancel={clearLongPress}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onEdit();
+        }
+      }}
+      className={className}
+      title="לחיצה ארוכה במובייל או קליק ימני בדסקטופ לעריכת שם העסקה"
+      aria-label={`ערוך שם עסקה: ${value}`}
+    >
+      {value}
+    </button>
+  );
+}
 
 interface ParsedAmountSearch {
   value: number;
@@ -405,6 +472,10 @@ export function TransactionList({
   // Notes inline editing
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteValue, setNoteValue] = useState('');
+  const [editingDescriptionTransaction, setEditingDescriptionTransaction] = useState<Transaction | null>(null);
+  const [descriptionValue, setDescriptionValue] = useState('');
+  const [applyDescriptionToSimilar, setApplyDescriptionToSimilar] = useState(false);
+  const [isSavingDescription, setIsSavingDescription] = useState(false);
 
   // Expanded categories in byCategory view
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -1265,6 +1336,92 @@ export function TransactionList({
     setNoteValue(currentNote || '');
   };
 
+  const openDescriptionEditor = (transaction: Transaction) => {
+    if (isSavingDescription) return;
+    setEditingDescriptionTransaction(transaction);
+    setDescriptionValue(transaction.description);
+    setApplyDescriptionToSimilar(false);
+  };
+
+  const closeDescriptionEditor = () => {
+    if (isSavingDescription) return;
+    setEditingDescriptionTransaction(null);
+    setDescriptionValue('');
+    setApplyDescriptionToSimilar(false);
+  };
+
+  const handleDescriptionSave = async () => {
+    if (!editingDescriptionTransaction || isSavingDescription) return;
+
+    const description = stripTrailingFinalDot(descriptionValue).trim();
+    if (!description) {
+      showToast('יש להזין שם עסקה תקין', 'info');
+      return;
+    }
+
+    if (description === editingDescriptionTransaction.description.trim()) {
+      closeDescriptionEditor();
+      return;
+    }
+
+    setIsSavingDescription(true);
+    try {
+      const response = await fetch(`/api/transactions/${editingDescriptionTransaction.id}/description`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description,
+          applyToSimilar: applyDescriptionToSimilar,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        showToast(result?.error || 'שגיאה בעדכון שם העסקה', 'error');
+        return;
+      }
+
+      const updatedIds = new Set<string>([
+        editingDescriptionTransaction.id,
+        ...(Array.isArray(result.updatedSimilarIds) ? result.updatedSimilarIds : []),
+      ]);
+
+      setTransactions((prev) => prev.map((tx) => (
+        updatedIds.has(tx.id)
+          ? { ...tx, description }
+          : tx
+      )));
+
+      closeDescriptionEditor();
+
+      if (result.propagationSkippedDueToSafety) {
+        showToast(
+          `שם העסקה עודכן. הפצה לדומות נחסמה כי נמצאו ${Number(result.matchedSimilarCount || 0)} תנועות דומות`,
+          'info'
+        );
+      } else if (result.propagationSkipped) {
+        showToast('שם העסקה עודכן רק עבור התנועה שבחרת', 'success');
+      } else if (applyDescriptionToSimilar && Number(result.updatedSimilar || 0) > 0) {
+        const conflictSuffix = Number(result.skippedConflictCount || 0) > 0
+          ? `, ו-${Number(result.skippedConflictCount || 0)} דולגו בגלל כפילות`
+          : '';
+        showToast(
+          `שם העסקה עודכן. עודכנו גם ${Number(result.updatedSimilar || 0)} תנועות דומות${conflictSuffix}`,
+          'success'
+        );
+      } else if (Number(result.skippedConflictCount || 0) > 0) {
+        showToast(`שם העסקה עודכן. ${Number(result.skippedConflictCount || 0)} דולגו בגלל כפילות`, 'info');
+      } else {
+        showToast('שם העסקה עודכן', 'success');
+      }
+    } catch (error) {
+      console.error('Description update error:', error);
+      showToast('שגיאה בעדכון שם העסקה', 'error');
+    } finally {
+      setIsSavingDescription(false);
+    }
+  };
+
   const handleNoteSave = async (transactionId: string) => {
     try {
       await fetch(`/api/transactions/${transactionId}/notes`, {
@@ -1913,9 +2070,11 @@ export function TransactionList({
                           <Repeat className="h-4 w-4" />
                         </button>
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-900 break-words">
-                            {tx.description}
-                          </p>
+                          <DescriptionEditTrigger
+                            value={tx.description}
+                            onEdit={() => openDescriptionEditor(tx)}
+                            className="text-sm font-medium text-gray-900 break-words text-right hover:text-blue-700 transition-colors"
+                          />
                           <p className="text-xs text-gray-500 mt-0.5">
                             {formatDate(tx.date)} · {tx.account.name}
                           </p>
@@ -2066,9 +2225,11 @@ export function TransactionList({
                               <Repeat className="h-4 w-4" />
                             </button>
                             <div className="min-w-0">
-                              <p className="text-sm font-medium text-gray-900 truncate max-w-[280px]">
-                                {tx.description}
-                              </p>
+                              <DescriptionEditTrigger
+                                value={tx.description}
+                                onEdit={() => openDescriptionEditor(tx)}
+                                className="text-sm font-medium text-gray-900 truncate max-w-[280px] hover:text-blue-700 transition-colors text-right"
+                              />
                               {editingNoteId === tx.id ? (
                                 <input
                                   type="text"
@@ -2171,14 +2332,17 @@ export function TransactionList({
             ) : (
               groupedTransactions.map((group) => {
                 const isExpense = group.totalAmount < 0;
+                const representativeTransaction = group.transactions[0];
 
                 return (
                   <div key={group.description} className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-900 break-words">
-                          {group.description}
-                        </p>
+                        <DescriptionEditTrigger
+                          value={group.description}
+                          onEdit={() => representativeTransaction && openDescriptionEditor(representativeTransaction)}
+                          className="text-sm font-medium text-gray-900 break-words text-right hover:text-blue-700 transition-colors"
+                        />
                         {group.count > 1 ? (
                           <p className="text-xs text-gray-500 mt-0.5">
                             {group.count} עסקאות · {formatDate(group.dates[group.dates.length - 1])} - {formatDate(group.dates[0])}
@@ -2231,13 +2395,16 @@ export function TransactionList({
                 ) : (
                   groupedTransactions.map((group) => {
                     const isExpense = group.totalAmount < 0;
+                    const representativeTransaction = group.transactions[0];
 
                     return (
                       <tr key={group.description} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
-                          <p className="text-sm font-medium text-gray-900 truncate max-w-[300px]">
-                            {group.description}
-                          </p>
+                          <DescriptionEditTrigger
+                            value={group.description}
+                            onEdit={() => representativeTransaction && openDescriptionEditor(representativeTransaction)}
+                            className="text-sm font-medium text-gray-900 truncate max-w-[300px] hover:text-blue-700 transition-colors text-right"
+                          />
                           {group.count > 1 && (
                             <p className="text-xs text-gray-400 mt-1">
                               {formatDate(group.dates[group.dates.length - 1])} - {formatDate(group.dates[0])}
@@ -2354,9 +2521,11 @@ export function TransactionList({
                                 <span className="text-xs sm:text-sm text-gray-400">
                                   {formatDate(tx.date)}
                                 </span>
-                                <span className="text-sm text-gray-700 break-words min-w-0">
-                                  {tx.description}
-                                </span>
+                                <DescriptionEditTrigger
+                                  value={tx.description}
+                                  onEdit={() => openDescriptionEditor(tx)}
+                                  className="text-sm text-gray-700 break-words min-w-0 hover:text-blue-700 transition-colors"
+                                />
                               </div>
                               <div className="mt-1">
                                 {editingNoteId === tx.id ? (
@@ -2424,6 +2593,112 @@ export function TransactionList({
               );
             })
           )}
+        </div>
+      )}
+
+      {editingDescriptionTransaction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/30"
+            onClick={closeDescriptionEditor}
+            aria-label="סגור חלון עריכת שם עסקה"
+          />
+
+          <div className="relative w-full max-w-lg bg-white rounded-xl border border-gray-200 shadow-xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">עריכת שם עסקה</h3>
+                <p className="text-sm text-gray-500">
+                  אפשר לתקן שם שנקלט בלי רווחים או לאחד וריאציות של אותו בית עסק
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeDescriptionEditor}
+                className="p-1.5 rounded-md text-gray-500 hover:bg-gray-100"
+                disabled={isSavingDescription}
+                aria-label="סגור"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+              <div className="font-medium">שם נוכחי</div>
+              <div className="mt-1 break-words text-blue-800">{editingDescriptionTransaction.description}</div>
+            </div>
+
+            <label className="space-y-1 block">
+              <span className="text-xs text-gray-600">שם חדש</span>
+              <input
+                type="text"
+                value={descriptionValue}
+                onChange={(e) => setDescriptionValue(stripTrailingFinalDot(e.target.value))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleDescriptionSave();
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeDescriptionEditor();
+                  }
+                }}
+                placeholder="למשל: אייזקס מעדני גורמה"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                autoFocus
+                disabled={isSavingDescription}
+              />
+            </label>
+
+            <label className="flex items-start gap-3 rounded-lg border border-gray-200 px-3 py-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={applyDescriptionToSimilar}
+                onChange={(e) => setApplyDescriptionToSimilar(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                disabled={isSavingDescription}
+              />
+              <div className="space-y-1">
+                <div className="text-sm font-medium text-gray-900">
+                  החל גם על עסקאות דומות מאותו מקום
+                </div>
+                <p className="text-xs text-gray-500">
+                  מומלץ לסמן רק כשבטוח שמדובר באותו בית עסק לאורך זמן, גם אם הסכומים משתנים.
+                </p>
+              </div>
+            </label>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={closeDescriptionEditor}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                disabled={isSavingDescription}
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDescriptionSave()}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={isSavingDescription}
+              >
+                {isSavingDescription ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    שומר...
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-4 w-4" />
+                    שמור שם חדש
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

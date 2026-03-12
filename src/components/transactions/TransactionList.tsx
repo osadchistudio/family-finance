@@ -1381,20 +1381,54 @@ export function TransactionList({
         return;
       }
 
+      const deletedTransactionId = typeof result.deletedTransactionId === 'string'
+        ? result.deletedTransactionId
+        : null;
+      const mergedTransactionId = typeof result?.transaction?.id === 'string'
+        ? result.transaction.id
+        : null;
       const updatedIds = new Set<string>([
         editingDescriptionTransaction.id,
         ...(Array.isArray(result.updatedSimilarIds) ? result.updatedSimilarIds : []),
       ]);
 
-      setTransactions((prev) => prev.map((tx) => (
-        updatedIds.has(tx.id)
-          ? { ...tx, description }
-          : tx
-      )));
+      setTransactions((prev) => prev
+        .filter((tx) => tx.id !== deletedTransactionId)
+        .map((tx) => {
+          if (mergedTransactionId && tx.id === mergedTransactionId) {
+            return {
+              ...tx,
+              description,
+              categoryId: result?.transaction?.categoryId ?? tx.categoryId,
+              category: result?.transaction?.category ?? tx.category,
+              notes: result?.transaction?.notes ?? tx.notes,
+              isRecurring: typeof result?.transaction?.isRecurring === 'boolean'
+                ? result.transaction.isRecurring
+                : tx.isRecurring,
+              isAutoCategorized: typeof result?.transaction?.isAutoCategorized === 'boolean'
+                ? result.transaction.isAutoCategorized
+                : tx.isAutoCategorized,
+            };
+          }
+
+          if (updatedIds.has(tx.id)) {
+            return { ...tx, description };
+          }
+
+          return tx;
+        }));
 
       closeDescriptionEditor();
 
-      if (result.propagationSkippedDueToSafety) {
+      if (result.mergedIntoExisting) {
+        const attachedCategoryMessage = result.attachedToExistingCategory
+          ? 'העסקה חוברה לרשומה קיימת וקיבלה גם את הקטגוריה שכבר הייתה עליה'
+          : 'העסקה חוברה לרשומה קיימת עם השם החדש כדי למנוע כפילות';
+        const similarMessage = Number(result.updatedSimilar || 0) > 0
+          ? `. עודכנו גם ${Number(result.updatedSimilar || 0)} תנועות דומות`
+          : '';
+        showToast(`${attachedCategoryMessage}${similarMessage}`, 'success');
+      } else if (result.propagationSkippedDueToSafety) {
         showToast(
           `שם העסקה עודכן. הפצה לדומות נחסמה כי נמצאו ${Number(result.matchedSimilarCount || 0)} תנועות דומות`,
           'info'
@@ -2665,7 +2699,7 @@ export function TransactionList({
                   החל גם על עסקאות דומות מאותו מקום
                 </div>
                 <p className="text-xs text-gray-500">
-                  מומלץ לסמן רק כשבטוח שמדובר באותו בית עסק לאורך זמן, גם אם הסכומים משתנים.
+                  אם כבר קיימת עסקה זהה עם השם החדש, המערכת תחבר אליה את הרשומה ותשמור את הקטגוריה הקיימת.
                 </p>
               </div>
             </label>

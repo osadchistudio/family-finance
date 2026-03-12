@@ -79,6 +79,8 @@ Out of scope:
     - mobile: long-press on the transaction name
     - desktop: right-click on the transaction name
     - optional bulk propagation to similar transactions from the same merchant family
+    - if the corrected name already exists on an otherwise identical transaction, the app now merges into the existing row instead of blocking on duplicate-key error
+    - the surviving existing row keeps its category, while notes/flags from the duplicate row are preserved
 
 ### Category assignment intelligence
 - Merchant-family similarity matching is used (not only exact description)
@@ -181,6 +183,29 @@ Out of scope:
   - use `שלח בדיקה עכשיו` in `/settings`
 
 ## Consolidated change log (major milestones)
+
+### 2026-03-12 - Made manual transaction-name edits merge into existing categorized rows
+Why:
+- Correcting compacted merchant names such as `אייזקסמעדניגורמה` to an already-existing clean name triggered the transaction unique key and blocked the user with a duplicate error
+- In practice these conflicts usually represent the same underlying transaction, so blocking prevented the desired outcome of attaching the corrected merchant to the existing category
+
+What changed:
+- Updated `PATCH /api/transactions/[id]/description` so that duplicate-key conflicts now resolve by merging into the existing matching transaction instead of returning a hard error
+- The merge keeps the existing canonical row, preserves its category, and carries over useful metadata from the duplicate row such as notes, recurring/excluded flags, reference, and missing value date/fileUpload relation when relevant
+- Similar-name propagation now uses the same merge-aware logic, so duplicate conflicts found while applying the rename to similar rows are cleaned up instead of surfacing as failures
+- Updated the transactions UI so a successful merge removes the duplicate row from the live list, refreshes any surviving canonical row in-place, and shows a success toast explaining that the transaction was attached to the existing categorized record
+- Clarified the helper text in the edit modal so users know that renaming to an already-existing merchant can intentionally reuse the current category assignment
+
+Files touched:
+- `/src/app/api/transactions/[id]/description/route.ts`
+- `/src/components/transactions/TransactionList.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy required
+- No DB migration
+- No new environment variables
+- After deploy, editing a transaction name to an already-existing canonical merchant name will merge duplicates instead of throwing a duplicate error
 
 ### 2026-03-12 - Added manual transaction-name editing from the transactions UI
 Why:

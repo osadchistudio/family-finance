@@ -1387,6 +1387,11 @@ export function TransactionList({
       const mergedTransactionId = typeof result?.transaction?.id === 'string'
         ? result.transaction.id
         : null;
+      const canonicalCategoryId = typeof result?.transaction?.categoryId === 'string'
+        ? result.transaction.categoryId
+        : null;
+      const canonicalCategory = result?.transaction?.category ?? null;
+      const shouldApplyCanonicalCategory = Boolean(result.attachedToExistingCategory && canonicalCategoryId && canonicalCategory);
       const updatedIds = new Set<string>([
         editingDescriptionTransaction.id,
         ...(Array.isArray(result.updatedSimilarIds) ? result.updatedSimilarIds : []),
@@ -1412,7 +1417,15 @@ export function TransactionList({
           }
 
           if (updatedIds.has(tx.id)) {
-            return { ...tx, description };
+            return {
+              ...tx,
+              description,
+              ...(shouldApplyCanonicalCategory ? {
+                categoryId: canonicalCategoryId,
+                category: canonicalCategory,
+                isAutoCategorized: false,
+              } : {}),
+            };
           }
 
           return tx;
@@ -1442,6 +1455,11 @@ export function TransactionList({
         showToast(
           `שם העסקה עודכן. עודכנו גם ${Number(result.updatedSimilar || 0)} תנועות דומות${conflictSuffix}`,
           'success'
+        );
+      } else if (Number(result.failedSimilarCount || 0) > 0) {
+        showToast(
+          `שם העסקה עודכן, אבל ${Number(result.failedSimilarCount || 0)} תנועות דומות לא עודכנו`,
+          'info'
         );
       } else if (Number(result.skippedConflictCount || 0) > 0) {
         showToast(`שם העסקה עודכן. ${Number(result.skippedConflictCount || 0)} דולגו בגלל כפילות`, 'info');

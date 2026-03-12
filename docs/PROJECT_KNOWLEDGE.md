@@ -649,3 +649,25 @@ Deploy/runtime impact:
 - Normal deploy
 - No DB migration
 - No behavior change for active production flows
+
+### 2026-03-12 - Made merchant-name edits inherit canonical categories and stop failing on partial propagation
+Why:
+- Renaming a malformed merchant like `אייזקסמעדניגורמה` to an existing canonical name like `אייזקס מעדני גורמה` still failed in some production cases
+- Users also needed the corrected merchant to inherit the category that already exists on the canonical merchant family, not only avoid a duplicate-key block
+
+What changed:
+- Added canonical-category inheritance to transaction description edits when the new merchant name already exists on categorized transactions
+- Broadened merge logic so exact duplicate conflicts keep the existing categorized row and attach the edited row to it
+- Made similar-transaction propagation best-effort so one failing similar row no longer aborts the whole rename action
+- Localized the generic server error for description edits so production toasts no longer show an English fallback message
+- Updated the client-side state update so successful renames can also refresh inherited category data in the visible transaction list
+
+Files touched:
+- `/src/app/api/transactions/[id]/description/route.ts`
+- `/src/components/transactions/TransactionList.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- Recommended to re-test long-press / right-click merchant rename on production after deploy

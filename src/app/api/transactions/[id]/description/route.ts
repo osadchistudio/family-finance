@@ -24,6 +24,11 @@ type EditableTransaction = {
   isRecurring: boolean;
 };
 
+type InheritedCategory = {
+  categoryId: string;
+  isAutoCategorized: boolean;
+};
+
 function mergeNotes(primary: string | null, secondary: string | null): string | null {
   const first = primary?.trim() || '';
   const second = secondary?.trim() || '';
@@ -34,6 +39,81 @@ function mergeNotes(primary: string | null, secondary: string | null): string | 
   if (first === second) return first;
 
   return `${first}\n\n${second}`;
+}
+
+async function findInheritedCategory(
+  tx: Prisma.TransactionClient,
+  source: EditableTransaction,
+  description: string
+): Promise<InheritedCategory | null> {
+  const sourceAmount = parseFloat(source.amount.toString());
+  const sourceIsExpense = Number.isFinite(sourceAmount) ? sourceAmount < 0 : true;
+
+  const categorizedMatches = await tx.transaction.findMany({
+    where: {
+      id: { not: source.id },
+      description,
+      categoryId: { not: null },
+      isExcluded: false,
+      ...(sourceIsExpense ? { amount: { lt: 0 } } : { amount: { gt: 0 } }),
+    },
+    select: {
+      categoryId: true,
+      isAutoCategorized: true,
+      date: true,
+    },
+    orderBy: {
+      date: 'desc',
+    },
+  });
+
+  if (categorizedMatches.length === 0) {
+    return null;
+  }
+
+  const categoryStats = new Map<string, { count: number; latestDate: Date; isAutoCategorized: boolean }>();
+
+  for (const match of categorizedMatches) {
+    if (!match.categoryId) continue;
+
+    const current = categoryStats.get(match.categoryId);
+    if (!current) {
+      categoryStats.set(match.categoryId, {
+        count: 1,
+        latestDate: match.date,
+        isAutoCategorized: match.isAutoCategorized,
+      });
+      continue;
+    }
+
+    categoryStats.set(match.categoryId, {
+      count: current.count + 1,
+      latestDate: current.latestDate > match.date ? current.latestDate : match.date,
+      isAutoCategorized: current.isAutoCategorized,
+    });
+  }
+
+  const winner = Array.from(categoryStats.entries())
+    .sort((left, right) => {
+      const [, leftStats] = left;
+      const [, rightStats] = right;
+
+      if (rightStats.count !== leftStats.count) {
+        return rightStats.count - leftStats.count;
+      }
+
+      return rightStats.latestDate.getTime() - leftStats.latestDate.getTime();
+    })[0];
+
+  if (!winner) {
+    return null;
+  }
+
+  const [categoryId, stats] = winner;
+  return {
+    categoryId,
+    isAutoCategorized: stats.isAutoCategorized,
+  };
 }
 
 async function findConflictingTransaction(
@@ -59,7 +139,8 @@ async function mergeIntoExistingTransaction(
   tx: Prisma.TransactionClient,
   source: EditableTransaction,
   targetId: string,
-  description: string
+  description: string,
+  inheritedCategory: InheritedCategory | null
 ) {
   const target = await tx.transaction.findUnique({
     where: { id: targetId },
@@ -72,9 +153,15 @@ async function mergeIntoExistingTransaction(
     throw new Error('Conflicting transaction was not found during merge');
   }
 
-  const mergedCategoryId = target.categoryId ?? source.categoryId ?? null;
+  const mergedCategoryId = target.categoryId ?? source.categoryId ?? inheritedCategory?.categoryId ?? null;
   const mergedAutoCategorized = mergedCategoryId
-    ? (target.categoryId ? target.isAutoCategorized : source.isAutoCategorized)
+    ? (
+      target.categoryId
+        ? target.isAutoCategorized
+        : source.categoryId
+          ? source.isAutoCategorized
+          : false
+    )
     : false;
 
   const updatedTarget = await tx.transaction.update({
@@ -106,14 +193,21 @@ async function mergeIntoExistingTransaction(
 async function updateDescriptionOrMerge(
   tx: Prisma.TransactionClient,
   source: EditableTransaction,
-  description: string
+  description: string,
+  inheritedCategory: InheritedCategory | null
 ) {
+  const shouldInheritCategory = Boolean(inheritedCategory?.categoryId && !source.categoryId);
+
   try {
     const updated = await tx.transaction.update({
       where: { id: source.id },
       data: {
         description,
         merchantName: description,
+        ...(shouldInheritCategory ? {
+          categoryId: inheritedCategory?.categoryId,
+          isAutoCategorized: false,
+        } : {}),
       },
       include: {
         category: true,
@@ -124,7 +218,7 @@ async function updateDescriptionOrMerge(
       transaction: updated,
       mergedIntoExisting: false,
       deletedTransactionId: null as string | null,
-      attachedToExistingCategory: false,
+      attachedToExistingCategory: shouldInheritCategory,
     };
   } catch (error) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
@@ -136,12 +230,18 @@ async function updateDescriptionOrMerge(
       throw error;
     }
 
-    const merged = await mergeIntoExistingTransaction(tx, source, conflictingTransaction.id, description);
+    const merged = await mergeIntoExistingTransaction(
+      tx,
+      source,
+      conflictingTransaction.id,
+      description,
+      inheritedCategory
+    );
     return {
       transaction: merged,
       mergedIntoExisting: true,
       deletedTransactionId: source.id,
-      attachedToExistingCategory: Boolean(conflictingTransaction.categoryId),
+      attachedToExistingCategory: Boolean(merged.categoryId),
     };
   }
 }
@@ -185,19 +285,28 @@ export async function PATCH(
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
     }
 
-    const primaryUpdateResult = await prisma.$transaction((tx) => (
-      updateDescriptionOrMerge(tx, transaction, description)
-    ));
+    const primaryUpdateResult = await prisma.$transaction(async (tx) => {
+      const inheritedCategory = await findInheritedCategory(tx, transaction, description);
+      return updateDescriptionOrMerge(tx, transaction, description, inheritedCategory);
+    });
     const primaryUpdated = primaryUpdateResult.transaction;
     const primaryDeletedTransactionId = primaryUpdateResult.deletedTransactionId;
     const mergedIntoExisting = primaryUpdateResult.mergedIntoExisting;
     const attachedToExistingCategory = primaryUpdateResult.attachedToExistingCategory;
+
+    const canonicalCategory = primaryUpdated.categoryId
+      ? {
+        categoryId: primaryUpdated.categoryId,
+        isAutoCategorized: primaryUpdated.isAutoCategorized,
+      }
+      : null;
 
     let matchedSimilarCount = 0;
     let updatedSimilarIds: string[] = [];
     let propagationSkipped = false;
     let propagationSkippedDueToSafety = false;
     let skippedConflictCount = 0;
+    let failedSimilarCount = 0;
 
     const sourceSignature = extractMerchantSignature(transaction.description);
     const sourceAmount = parseFloat(transaction.amount.toString());
@@ -242,16 +351,25 @@ export async function PATCH(
         propagationSkippedDueToSafety = true;
       } else {
         for (const candidate of similarCandidates) {
-          const result = await prisma.$transaction((tx) => (
-            updateDescriptionOrMerge(tx, candidate, description)
-          ));
+          try {
+            const result = await prisma.$transaction((tx) => (
+              updateDescriptionOrMerge(tx, candidate, description, canonicalCategory)
+            ));
 
-          if (result.mergedIntoExisting) {
-            skippedConflictCount += 1;
-            continue;
+            if (result.mergedIntoExisting) {
+              skippedConflictCount += 1;
+              continue;
+            }
+
+            updatedSimilarIds.push(candidate.id);
+          } catch (similarError) {
+            failedSimilarCount += 1;
+            console.error('Description propagation error:', {
+              sourceTransactionId: id,
+              candidateTransactionId: candidate.id,
+              error: similarError,
+            });
           }
-
-          updatedSimilarIds.push(candidate.id);
         }
       }
     } else if (applyToSimilar) {
@@ -276,11 +394,12 @@ export async function PATCH(
       propagationSkipped,
       propagationSkippedDueToSafety,
       skippedConflictCount,
+      failedSimilarCount,
     });
   } catch (error) {
     console.error('Update description error:', error);
     return NextResponse.json(
-      { error: 'Failed to update description' },
+      { error: 'שגיאה בעדכון שם העסקה' },
       { status: 500 }
     );
   }

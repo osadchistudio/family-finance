@@ -2,6 +2,15 @@ import { prisma } from '@/lib/prisma';
 import { SummaryCard } from '@/components/dashboard/SummaryCard';
 import { ExpenseChart } from '@/components/dashboard/ExpenseChart';
 import { CategoryPieChart } from '@/components/dashboard/CategoryPieChart';
+import {
+  CurrentActionItem,
+  CurrentActionItemsCard,
+  CurrentActionItemsStatus,
+} from '@/components/dashboard/CurrentActionItemsCard';
+import {
+  CurrentPeriodStatus,
+  CurrentPeriodStatusCard,
+} from '@/components/dashboard/CurrentPeriodStatusCard';
 import { RecentTransactions } from '@/components/dashboard/RecentTransactions';
 import {
   VariableBudgetAlert,
@@ -81,9 +90,89 @@ function buildFallbackBudgetStatus(periodLabel: string, periodKey: string): Vari
     actualTotal: 0,
     remainingTotal: 0,
     utilizationPercent: 0,
+    projectedTotal: 0,
+    projectedRemaining: 0,
+    projectedUtilizationPercent: 0,
+    averageDailyActual: 0,
+    plannedDailyAllowanceRemaining: null,
+    totalDays: 0,
+    elapsedDays: 0,
+    remainingDays: 0,
+    paceStatus: 'on-track',
     warningCount: 0,
     overCount: 0,
     alerts: [],
+  };
+}
+
+function buildFallbackCurrentPeriodStatus(periodMode: PeriodMode): CurrentPeriodStatus {
+  const currentPeriod = buildPeriods(periodMode, dayjs(), 1)[0];
+  const periodKey = currentPeriod?.key || dayjs().format('YYYY-MM');
+  const periodLabel = currentPeriod
+    ? `${currentPeriod.label} ${currentPeriod.subLabel}`.trim()
+    : periodKey;
+  const dateRangeLabel = currentPeriod
+    ? `${currentPeriod.startDate.format('DD/MM/YYYY')} - ${currentPeriod.endDate.format('DD/MM/YYYY')}`
+    : dayjs().format('DD/MM/YYYY');
+  const totalDays = currentPeriod
+    ? currentPeriod.endDate.startOf('day').diff(currentPeriod.startDate.startOf('day'), 'day') + 1
+    : 0;
+
+  return {
+    periodLabel,
+    dateRangeLabel,
+    income: 0,
+    expense: 0,
+    balance: 0,
+    averageDailyExpense: 0,
+    remainingDailyBudget: null,
+    totalDays,
+    elapsedDays: 0,
+    remainingDays: totalDays,
+    transactionCount: 0,
+    hasAnyData: false,
+    expectsBankData: false,
+    expectsCreditData: false,
+    hasBankData: false,
+    hasCreditData: false,
+    missingSources: [],
+    isPartial: false,
+  };
+}
+
+function buildFallbackCurrentActionItems(
+  currentPeriodStatus: CurrentPeriodStatus,
+  budgetStatus: VariableBudgetStatus
+): CurrentActionItemsStatus {
+  const items: CurrentActionItem[] = [];
+
+  if (currentPeriodStatus.isPartial && currentPeriodStatus.missingSources.length > 0) {
+    items.push({
+      key: 'missing-sources',
+      title: 'חסרים מקורות לתקופה הנוכחית',
+      description: `עדיין לא נקלטו ${currentPeriodStatus.missingSources.join(' ו־')} ולכן התמונה חלקית`,
+      href: '/upload',
+      count: currentPeriodStatus.missingSources.length,
+      tone: 'warning',
+    });
+  }
+
+  const budgetAlertsCount = budgetStatus.warningCount + budgetStatus.overCount;
+  if (budgetAlertsCount > 0) {
+    items.push({
+      key: 'budget-alerts',
+      title: 'התראות תקציב משתנות',
+      description: `יש ${budgetAlertsCount} קטגוריות שמתקרבות לתקרה או כבר חרגו ממנה`,
+      href: '/monthly-summary',
+      count: budgetAlertsCount,
+      tone: budgetStatus.overCount > 0 ? 'danger' : 'warning',
+    });
+  }
+
+  return {
+    periodLabel: currentPeriodStatus.periodLabel,
+    items,
+    totalOpenItems: items.reduce((sum, item) => sum + item.count, 0),
   };
 }
 
@@ -164,6 +253,179 @@ async function getAnalyticsData(periodMode: PeriodMode): Promise<DashboardAnalyt
   };
 }
 
+async function getCurrentPeriodStatus(periodMode: PeriodMode): Promise<CurrentPeriodStatus> {
+  const now = dayjs();
+  const periods = buildPeriods(periodMode, now, RECENT_AVERAGE_PERIODS);
+  const currentPeriod = periods[periods.length - 1];
+
+  if (!currentPeriod) {
+    return buildFallbackCurrentPeriodStatus(periodMode);
+  }
+
+  try {
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        date: {
+          gte: periods[0].startDate.startOf('day').toDate(),
+          lte: currentPeriod.endDate.endOf('day').toDate(),
+        },
+        isExcluded: false,
+      },
+      select: {
+        date: true,
+        amount: true,
+        account: {
+          select: {
+            institution: true,
+          },
+        },
+      },
+    });
+
+    const { periodAggregates, requiredSources } = aggregateTransactionsByPeriod(
+      transactions,
+      periods,
+      periodMode
+    );
+
+    const aggregate = periodAggregates[currentPeriod.key];
+    const income = aggregate?.income.toNumber() || 0;
+    const expense = aggregate?.expense.toNumber() || 0;
+    const transactionCount = aggregate?.transactionCount || 0;
+    const hasBankData = (aggregate?.bankCount || 0) > 0;
+    const hasCreditData = (aggregate?.creditCount || 0) > 0;
+
+    const totalDays = currentPeriod.endDate.startOf('day').diff(currentPeriod.startDate.startOf('day'), 'day') + 1;
+    const elapsedDays = Math.max(
+      0,
+      Math.min(totalDays, now.startOf('day').diff(currentPeriod.startDate.startOf('day'), 'day') + 1)
+    );
+    const remainingDays = Math.max(0, currentPeriod.endDate.startOf('day').diff(now.startOf('day'), 'day'));
+    const balance = income - expense;
+    const averageDailyExpense = elapsedDays > 0 ? expense / elapsedDays : 0;
+
+    const missingSources: string[] = [];
+    if (requiredSources.requiresBank && !hasBankData) missingSources.push('עו"ש');
+    if (requiredSources.requiresCredit && !hasCreditData) missingSources.push('אשראי');
+
+    return {
+      periodLabel: `${currentPeriod.label} ${currentPeriod.subLabel}`.trim(),
+      dateRangeLabel: `${currentPeriod.startDate.format('DD/MM/YYYY')} - ${currentPeriod.endDate.format('DD/MM/YYYY')}`,
+      income,
+      expense,
+      balance,
+      averageDailyExpense,
+      remainingDailyBudget: remainingDays > 0 ? balance / remainingDays : null,
+      totalDays,
+      elapsedDays,
+      remainingDays,
+      transactionCount,
+      hasAnyData: transactionCount > 0 || income > 0 || expense > 0,
+      expectsBankData: requiredSources.requiresBank,
+      expectsCreditData: requiredSources.requiresCredit,
+      hasBankData,
+      hasCreditData,
+      missingSources,
+      isPartial: missingSources.length > 0,
+    };
+  } catch (error) {
+    console.error('Dashboard current period status load error:', error);
+    return buildFallbackCurrentPeriodStatus(periodMode);
+  }
+}
+
+async function getCurrentActionItems(
+  periodMode: PeriodMode,
+  currentPeriodStatus: CurrentPeriodStatus,
+  budgetStatus: VariableBudgetStatus
+): Promise<CurrentActionItemsStatus> {
+  const currentPeriod = buildPeriods(periodMode, dayjs(), 1)[0];
+  if (!currentPeriod) {
+    return buildFallbackCurrentActionItems(currentPeriodStatus, budgetStatus);
+  }
+
+  try {
+    const recentWindowStart = dayjs().subtract(14, 'day').startOf('day').toDate();
+
+    const [uncategorizedCount, failedUploadsCount] = await Promise.all([
+      prisma.transaction.count({
+        where: {
+          isExcluded: false,
+          categoryId: null,
+          date: {
+            gte: currentPeriod.startDate.startOf('day').toDate(),
+            lte: currentPeriod.endDate.endOf('day').toDate(),
+          },
+        },
+      }),
+      prisma.fileUpload.count({
+        where: {
+          status: 'FAILED',
+          processedAt: {
+            gte: recentWindowStart,
+          },
+        },
+      }),
+    ]);
+
+    const items: CurrentActionItem[] = [];
+
+    if (currentPeriodStatus.isPartial && currentPeriodStatus.missingSources.length > 0) {
+      items.push({
+        key: 'missing-sources',
+        title: 'חסרים מקורות לתקופה הנוכחית',
+        description: `חסרים ${currentPeriodStatus.missingSources.join(' ו־')} ולכן כדאי להשלים העלאה לפני שמחליטים`,
+        href: '/upload',
+        count: currentPeriodStatus.missingSources.length,
+        tone: 'warning',
+      });
+    }
+
+    if (uncategorizedCount > 0) {
+      items.push({
+        key: 'uncategorized',
+        title: 'תנועות לא מסווגות',
+        description: `יש ${uncategorizedCount} תנועות בתקופה הנוכחית שמחכות לשיוך לקטגוריה`,
+        href: '/transactions?categoryId=uncategorized',
+        count: uncategorizedCount,
+        tone: 'warning',
+      });
+    }
+
+    if (failedUploadsCount > 0) {
+      items.push({
+        key: 'failed-uploads',
+        title: 'העלאות שנכשלו לאחרונה',
+        description: `נמצאו ${failedUploadsCount} העלאות שנכשלו ב־14 הימים האחרונים וכדאי לבדוק אותן`,
+        href: '/upload',
+        count: failedUploadsCount,
+        tone: 'danger',
+      });
+    }
+
+    const budgetAlertsCount = budgetStatus.warningCount + budgetStatus.overCount;
+    if (budgetAlertsCount > 0) {
+      items.push({
+        key: 'budget-alerts',
+        title: 'התראות תקציב משתנות',
+        description: `יש ${budgetAlertsCount} קטגוריות שמתקרבות לתקרה או כבר חרגו בתקופה הזו`,
+        href: '/monthly-summary',
+        count: budgetAlertsCount,
+        tone: budgetStatus.overCount > 0 ? 'danger' : 'info',
+      });
+    }
+
+    return {
+      periodLabel: currentPeriodStatus.periodLabel,
+      items,
+      totalOpenItems: items.reduce((sum, item) => sum + item.count, 0),
+    };
+  } catch (error) {
+    console.error('Dashboard current action items load error:', error);
+    return buildFallbackCurrentActionItems(currentPeriodStatus, budgetStatus);
+  }
+}
+
 async function getRecentTransactions(): Promise<RecentTransactionItem[]> {
   const transactions = await prisma.transaction.findMany({
     where: { isExcluded: false },
@@ -198,7 +460,8 @@ async function getRecentTransactions(): Promise<RecentTransactionItem[]> {
 }
 
 async function getCurrentVariableBudgetStatus(periodMode: PeriodMode): Promise<VariableBudgetStatus> {
-  const currentPeriod = buildPeriods(periodMode, dayjs(), 1)[0];
+  const now = dayjs();
+  const currentPeriod = buildPeriods(periodMode, now, 1)[0];
   const periodKey = currentPeriod?.key || dayjs().format('YYYY-MM');
   const periodLabel = currentPeriod
     ? `${currentPeriod.label} ${currentPeriod.subLabel}`.trim()
@@ -303,6 +566,27 @@ async function getCurrentVariableBudgetStatus(periodMode: PeriodMode): Promise<V
 
     const remainingTotal = plannedTotal - actualTotal;
     const utilizationPercent = plannedTotal > 0 ? (actualTotal / plannedTotal) * 100 : 0;
+    const totalDays = currentPeriod.endDate.startOf('day').diff(currentPeriod.startDate.startOf('day'), 'day') + 1;
+    const elapsedDays = Math.max(
+      0,
+      Math.min(totalDays, now.startOf('day').diff(currentPeriod.startDate.startOf('day'), 'day') + 1)
+    );
+    const remainingDays = Math.max(0, currentPeriod.endDate.startOf('day').diff(now.startOf('day'), 'day'));
+    const averageDailyActual = elapsedDays > 0 ? actualTotal / elapsedDays : 0;
+    const projectedTotal = remainingDays > 0
+      ? Number((actualTotal + averageDailyActual * remainingDays).toFixed(2))
+      : actualTotal;
+    const projectedRemaining = Number((plannedTotal - projectedTotal).toFixed(2));
+    const projectedUtilizationPercent = plannedTotal > 0 ? (projectedTotal / plannedTotal) * 100 : 0;
+    const plannedDailyAllowanceRemaining = remainingDays > 0
+      ? Number((remainingTotal / remainingDays).toFixed(2))
+      : null;
+    const paceStatus: VariableBudgetStatus['paceStatus'] =
+      projectedUtilizationPercent > 100
+        ? 'over'
+        : projectedUtilizationPercent >= 90
+          ? 'warning'
+          : 'on-track';
 
     return {
       hasPlan: true,
@@ -313,6 +597,15 @@ async function getCurrentVariableBudgetStatus(periodMode: PeriodMode): Promise<V
       actualTotal,
       remainingTotal,
       utilizationPercent,
+      projectedTotal,
+      projectedRemaining,
+      projectedUtilizationPercent,
+      averageDailyActual,
+      plannedDailyAllowanceRemaining,
+      totalDays,
+      elapsedDays,
+      remainingDays,
+      paceStatus,
       warningCount,
       overCount,
       alerts,
@@ -331,10 +624,11 @@ export default async function HomePage() {
     ? `${currentPeriod.label} ${currentPeriod.subLabel}`.trim()
     : fallbackPeriodKey;
 
-  const [analyticsResult, recentTransactionsResult, budgetStatusResult] = await Promise.allSettled([
+  const [analyticsResult, recentTransactionsResult, budgetStatusResult, currentPeriodStatusResult] = await Promise.allSettled([
     getAnalyticsData(periodMode),
     getRecentTransactions(),
     getCurrentVariableBudgetStatus(periodMode),
+    getCurrentPeriodStatus(periodMode),
   ]);
 
   const analytics = analyticsResult.status === 'fulfilled'
@@ -357,6 +651,15 @@ export default async function HomePage() {
   if (budgetStatusResult.status === 'rejected') {
     console.error('Dashboard budget status load error:', budgetStatusResult.reason);
   }
+
+  const currentPeriodStatus = currentPeriodStatusResult.status === 'fulfilled'
+    ? currentPeriodStatusResult.value
+    : buildFallbackCurrentPeriodStatus(periodMode);
+  if (currentPeriodStatusResult.status === 'rejected') {
+    console.error('Dashboard current period status load error:', currentPeriodStatusResult.reason);
+  }
+
+  const currentActionItems = await getCurrentActionItems(periodMode, currentPeriodStatus, budgetStatus);
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -398,6 +701,10 @@ export default async function HomePage() {
           />
         </div>
       </div>
+
+      <CurrentPeriodStatusCard status={currentPeriodStatus} />
+
+      <CurrentActionItemsCard status={currentActionItems} />
 
       <VariableBudgetStatusCard status={budgetStatus} />
 

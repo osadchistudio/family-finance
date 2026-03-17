@@ -25,6 +25,15 @@ export interface VariableBudgetStatus {
   actualTotal: number;
   remainingTotal: number;
   utilizationPercent: number;
+  projectedTotal: number;
+  projectedRemaining: number;
+  projectedUtilizationPercent: number;
+  averageDailyActual: number;
+  plannedDailyAllowanceRemaining: number | null;
+  totalDays: number;
+  elapsedDays: number;
+  remainingDays: number;
+  paceStatus: 'on-track' | 'warning' | 'over';
   warningCount: number;
   overCount: number;
   alerts: VariableBudgetAlert[];
@@ -69,6 +78,25 @@ export function VariableBudgetStatusCard({ status }: VariableBudgetStatusCardPro
   const visibleAlerts = status.alerts.slice(0, 4);
   const hasAlerts = status.alerts.length > 0;
   const progressWidth = Math.max(0, Math.min(100, status.utilizationPercent));
+  const projectedProgressWidth = Math.max(0, Math.min(100, status.projectedUtilizationPercent));
+  const forecastToneClass =
+    status.paceStatus === 'over'
+      ? 'border-red-200 bg-red-50 text-red-700'
+      : status.paceStatus === 'warning'
+        ? 'border-amber-200 bg-amber-50 text-amber-700'
+        : 'border-green-200 bg-green-50 text-green-700';
+  const forecastTitle =
+    status.paceStatus === 'over'
+      ? 'בקצב הנוכחי צפויה חריגה'
+      : status.paceStatus === 'warning'
+        ? 'בקצב הנוכחי התקציב בסיכון'
+        : 'בקצב הנוכחי אתה על המסלול';
+  const forecastDescription =
+    status.paceStatus === 'over'
+      ? 'אם הקצב היומי יישאר דומה, התקופה צפויה להסתיים מעל התקציב שתוכנן'
+      : status.paceStatus === 'warning'
+        ? 'יש עדיין סיכוי להישאר במסגרת, אבל כדאי לעקוב מקרוב אחרי הקצב בימים הקרובים'
+        : 'התחזית הנוכחית מראה שסביר שתסיים את התקופה בתוך המסגרת המתוכננת';
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6 border border-gray-100">
@@ -110,6 +138,70 @@ export function VariableBudgetStatusCard({ status }: VariableBudgetStatusCardPro
           className={`h-full transition-all ${status.utilizationPercent > 100 ? 'bg-red-500' : status.utilizationPercent >= 85 ? 'bg-amber-500' : 'bg-green-500'}`}
           style={{ width: `${progressWidth}%` }}
         />
+      </div>
+
+      <div className={`mt-4 rounded-lg border p-3 ${forecastToneClass}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold">{forecastTitle}</p>
+            <p className="mt-1 text-xs opacity-90">{forecastDescription}</p>
+          </div>
+          <div className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold">
+            עוד {status.remainingDays} ימים
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="rounded-lg border border-white/60 bg-white/70 p-3">
+            <p className="text-xs text-gray-500">תחזית סוף תקופה</p>
+            <p className="mt-1 text-lg font-bold text-gray-900">{formatCurrency(status.projectedTotal)}</p>
+          </div>
+          <div className="rounded-lg border border-white/60 bg-white/70 p-3">
+            <p className="text-xs text-gray-500">פער צפוי מול התקציב</p>
+            <p className={`mt-1 text-lg font-bold ${status.projectedRemaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {status.projectedRemaining >= 0 ? '' : '-'}
+              {formatCurrency(Math.abs(status.projectedRemaining))}
+            </p>
+          </div>
+          <div className="rounded-lg border border-white/60 bg-white/70 p-3">
+            <p className="text-xs text-gray-500">קצב משתנות יומי</p>
+            <p className="mt-1 text-lg font-bold text-gray-900">{formatCurrency(status.averageDailyActual)}</p>
+          </div>
+          <div className="rounded-lg border border-white/60 bg-white/70 p-3">
+            <p className="text-xs text-gray-500">מסגרת יומית נותרת</p>
+            <p
+              className={`mt-1 text-lg font-bold ${
+                status.plannedDailyAllowanceRemaining === null
+                  ? 'text-gray-900'
+                  : status.plannedDailyAllowanceRemaining >= 0
+                    ? 'text-green-600'
+                    : 'text-red-600'
+              }`}
+            >
+              {status.plannedDailyAllowanceRemaining === null
+                ? 'אין ימים נותרים'
+                : status.plannedDailyAllowanceRemaining >= 0
+                  ? formatCurrency(status.plannedDailyAllowanceRemaining)
+                  : `-${formatCurrency(Math.abs(status.plannedDailyAllowanceRemaining))}`}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 h-2 w-full rounded-full bg-white/70 overflow-hidden">
+          <div
+            className={`h-full transition-all ${
+              status.projectedUtilizationPercent > 100
+                ? 'bg-red-500'
+                : status.projectedUtilizationPercent >= 90
+                  ? 'bg-amber-500'
+                  : 'bg-green-500'
+            }`}
+            style={{ width: `${projectedProgressWidth}%` }}
+          />
+        </div>
+        <p className="mt-2 text-xs text-gray-600">
+          תחזית לפי {status.elapsedDays} ימים שכבר עברו מתוך {status.totalDays} בתקופה · שימוש צפוי {formatPercent(status.projectedUtilizationPercent)}
+        </p>
       </div>
 
       {hasAlerts ? (

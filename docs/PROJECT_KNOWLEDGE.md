@@ -715,3 +715,73 @@ Deploy/runtime impact:
 - Normal deploy
 - No DB migration
 - Upload deletion is now available from `/upload` and only affects transactions linked to the selected upload
+
+### 2026-03-15 - Added current-period status card to the dashboard
+Why:
+- The dashboard already showed strong historical averages, but it still lacked a practical "right now" view for the active billing/calendar period
+- Users need to know whether the current period is complete, how many days remain, and whether the current snapshot is missing bank or credit data before trusting the numbers
+
+What changed:
+- Added a new dashboard card for the active period with current income, expense, balance, daily burn rate, and remaining daily budget
+- Added period progress metadata: active date range, total days, elapsed days, remaining days, and transaction count
+- Added missing-source indicators that surface whether the current period is partial because it is missing expected `עו"ש` and/or `אשראי` data
+- Kept the dashboard fault-tolerant by giving the new card its own server-side loader and fallback state, following the same pattern as the rest of the dashboard
+
+Files touched:
+- `/src/app/page.tsx`
+- `/src/components/dashboard/CurrentPeriodStatusCard.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- Dashboard now performs one additional server-side transaction query to build current-period status
+
+### 2026-03-15 - Added `לטיפול עכשיו` dashboard card for current-period follow-up
+Why:
+- After adding current-period status, the dashboard still lacked a focused area that translates the current snapshot into concrete actions
+- Users need one place that surfaces what is blocking a reliable "this month" view: missing sources, uncategorized transactions, failed uploads, and active variable-budget alerts
+
+What changed:
+- Added a new dashboard card, `לטיפול עכשיו`, that summarizes open issues for the active billing/calendar period
+- Surfaced four actionable states in one place:
+  - missing required sources for the active period
+  - uncategorized transactions in the active period
+  - failed uploads from the last 14 days
+  - active variable-budget alerts
+- Added direct navigation from each card row to the relevant screen (`/upload`, `/transactions?categoryId=uncategorized`, `/monthly-summary`)
+- Added a green empty state when there are no urgent follow-up items, so the dashboard clearly distinguishes "clean" periods from periods that still need work
+- Kept the new card fault-tolerant with a server-side fallback builder so a problem in one action feed does not break the full dashboard
+
+Files touched:
+- `/src/app/page.tsx`
+- `/src/components/dashboard/CurrentActionItemsCard.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- Dashboard now performs one additional server-side pass for uncategorized transaction count and failed upload count for the active period
+
+### 2026-03-15 - Expanded variable budget status with end-of-period forecast
+Why:
+- The current-month dashboard still needed a forward-looking view, not just a snapshot of what already happened
+- Users need to know whether the current variable-spend pace is likely to finish inside or outside the planned budget for the active billing/calendar period
+
+What changed:
+- Expanded the existing variable-budget dashboard card instead of adding another separate card
+- Added end-of-period forecast metrics based on the actual spend pace so far in the active period
+- Added projected total variable spend, projected gap versus plan, daily variable spend pace, and remaining daily allowance
+- Added an on-track / warning / over status with a forecast banner so users can quickly understand whether the current pace is healthy
+- Added projected utilization progress so the card compares both current usage and expected end-of-period usage
+- Kept the calculation tied to the active billing/calendar period and current day count, so the forecast updates automatically as the period advances
+
+Files touched:
+- `/src/app/page.tsx`
+- `/src/components/dashboard/VariableBudgetStatusCard.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- Dashboard variable-budget status now performs additional in-memory forecast calculations from already loaded current-period plan and spend data

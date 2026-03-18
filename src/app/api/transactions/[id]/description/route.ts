@@ -197,6 +197,24 @@ async function updateDescriptionOrMerge(
   inheritedCategory: InheritedCategory | null
 ) {
   const shouldInheritCategory = Boolean(inheritedCategory?.categoryId && !source.categoryId);
+  const conflictingTransaction = await findConflictingTransaction(tx, source, description);
+
+  if (conflictingTransaction) {
+    const merged = await mergeIntoExistingTransaction(
+      tx,
+      source,
+      conflictingTransaction.id,
+      description,
+      inheritedCategory
+    );
+
+    return {
+      transaction: merged,
+      mergedIntoExisting: true,
+      deletedTransactionId: source.id,
+      attachedToExistingCategory: Boolean(merged.categoryId),
+    };
+  }
 
   try {
     const updated = await tx.transaction.update({
@@ -225,24 +243,9 @@ async function updateDescriptionOrMerge(
       throw error;
     }
 
-    const conflictingTransaction = await findConflictingTransaction(tx, source, description);
-    if (!conflictingTransaction) {
-      throw error;
-    }
-
-    const merged = await mergeIntoExistingTransaction(
-      tx,
-      source,
-      conflictingTransaction.id,
-      description,
-      inheritedCategory
-    );
-    return {
-      transaction: merged,
-      mergedIntoExisting: true,
-      deletedTransactionId: source.id,
-      attachedToExistingCategory: Boolean(merged.categoryId),
-    };
+    // A rare race can still produce a unique conflict after the preflight check.
+    // Surface a controlled error instead of leaving the request with a generic DB failure.
+    throw new Error('Duplicate transaction detected while renaming merchant');
   }
 }
 
@@ -398,8 +401,11 @@ export async function PATCH(
     });
   } catch (error) {
     console.error('Update description error:', error);
+    const message = error instanceof Error && error.message === 'Duplicate transaction detected while renaming merchant'
+      ? 'כבר קיימת עסקה בשם הזה. נסה שוב או בטל את ההחלה על עסקאות דומות'
+      : 'שגיאה בעדכון שם העסקה';
     return NextResponse.json(
-      { error: 'שגיאה בעדכון שם העסקה' },
+      { error: message },
       { status: 500 }
     );
   }

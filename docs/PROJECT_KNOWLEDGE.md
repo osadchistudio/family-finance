@@ -879,3 +879,46 @@ Deploy/runtime impact:
 - No DB migration
 - No new environment variables
 - Mobile recurring removal now happens directly from the repeat icon, and the bottom navigation uses taller wrapped labels
+
+### 2026-03-18 - Polished current month control center wording and action clarity
+Why:
+- The first version of the current month control center exposed the right data, but the wording still felt a bit raw and ambiguous in a few important places
+- Users needed clearer guidance about whether the current period is complete, what `מאזן עד כה` means, and what each `לטיפול עכשיו` action will actually do
+
+What changed:
+- Added explicit data-quality status chips to the current-period card so the dashboard now distinguishes between waiting for data, partial data, and complete data
+- Clarified key dashboard labels such as `מאזן עד כה`, `מרווח עד סוף התקופה לפי המצב הנוכחי`, `הוצאות בפועל`, `מרווח נותר`, and `ניצול עד כה`
+- Rewrote helper and empty-state copy across the current-period, action-items, and variable-budget cards so the guidance is more operational and less generic
+- Replaced the generic `פתח` CTA in `לטיפול עכשיו` with task-specific labels such as `השלם נתונים`, `בדוק העלאות`, `בדוק תקציב`, and `שייך תנועות`
+
+Files touched:
+- `/src/components/dashboard/CurrentPeriodStatusCard.tsx`
+- `/src/components/dashboard/CurrentActionItemsCard.tsx`
+- `/src/components/dashboard/VariableBudgetStatusCard.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- No new environment variables
+- Dashboard polish only; no data model or background-job impact
+
+### 2026-03-18 - Fixed merchant rename collisions by preflighting duplicate merges
+Why:
+- Merchant names that were parsed without spaces, such as `אייזקסמעדניגורמה`, still failed to rename into their canonical spaced form when a matching transaction already existed
+- The previous flow relied on catching a database unique-constraint error inside the same transaction, which could leave the rename request in a failed state and surface a generic error toast instead of merging into the existing canonical row
+
+What changed:
+- Changed the merchant-rename API to check for an existing conflicting transaction before attempting the update, and merge into that canonical row immediately when found
+- Preserved the existing category inheritance behavior while avoiding the failing `update -> P2002 -> recover` path for the common compacted-name fix flow
+- Added a clearer user-facing error message for the rare race-condition case where another duplicate is created between the preflight check and the actual write
+
+Files touched:
+- `/src/app/api/transactions/[id]/description/route.ts`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- No new environment variables
+- Merchant renames that target an already-existing canonical description should now merge cleanly instead of failing on the unique transaction constraint

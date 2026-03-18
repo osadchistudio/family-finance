@@ -17,11 +17,23 @@ import {
   VariableBudgetStatus,
   VariableBudgetStatusCard,
 } from '@/components/dashboard/VariableBudgetStatusCard';
+import {
+  SmartNudge,
+  SmartNudgesCard,
+  SmartNudgesStatus,
+} from '@/components/dashboard/SmartNudgesCard';
 import dayjs from 'dayjs';
 import { Decimal } from 'decimal.js';
 import { buildPeriodLabels, buildPeriods, PeriodMode, RECENT_AVERAGE_PERIODS } from '@/lib/period-utils';
 import { getPeriodModeSetting } from '@/lib/system-settings';
 import { getVariableBudgetPlan } from '@/lib/variable-budget';
+import {
+  buildSmartNudgeSnoozeKey,
+  getSmartNudgeDismissals,
+  getSmartNudgeSnoozes,
+  type DismissedSmartNudgeMap,
+  type SnoozedSmartNudgeMap,
+} from '@/lib/smart-nudge-snooze';
 import {
   aggregateTransactionsByPeriod,
   buildAverageCategoryBreakdown,
@@ -174,6 +186,72 @@ function buildFallbackCurrentActionItems(
     items,
     totalOpenItems: items.reduce((sum, item) => sum + item.count, 0),
   };
+}
+
+function buildFallbackSmartNudgesStatus(
+  periodKey: string,
+  currentPeriodStatus: CurrentPeriodStatus,
+  budgetStatus: VariableBudgetStatus,
+  snoozed: SnoozedSmartNudgeMap = {},
+  dismissed: DismissedSmartNudgeMap = {}
+): SmartNudgesStatus {
+  const nudges: SmartNudge[] = [];
+
+  if (currentPeriodStatus.isPartial && currentPeriodStatus.missingSources.length > 0) {
+    nudges.push({
+      key: 'missing-sources',
+      title: 'התמונה של התקופה עדיין חלקית',
+      description: `חסרים ${currentPeriodStatus.missingSources.join(' ו־')} ולכן כדאי להשלים נתונים לפני שמסתמכים על המצב הנוכחי`,
+      href: '/upload',
+      actionLabel: 'השלם העלאה',
+      tone: 'warning',
+    });
+  }
+
+  if (budgetStatus.paceStatus === 'over') {
+    nudges.push({
+      key: 'budget-overrun',
+      title: 'בקצב הנוכחי צפויה חריגה במשתנות',
+      description: 'קצב ההוצאות המשתנות גבוה מהמסגרת שתוכננה, ולכן כדאי לבצע התאמה לפני סוף התקופה',
+      href: '/monthly-summary',
+      actionLabel: 'פתח תקציב',
+      tone: 'danger',
+    });
+  } else if (budgetStatus.paceStatus === 'warning') {
+    nudges.push({
+      key: 'budget-warning',
+      title: 'קצב המשתנות מתחיל לאותת על סיכון',
+      description: 'התחזית עדיין ניתנת לבלימה, אבל כדאי לעקוב מקרוב אחרי הקצב בימים הקרובים',
+      href: '/monthly-summary',
+      actionLabel: 'בדוק קצב',
+      tone: 'warning',
+    });
+  }
+
+  return {
+    periodLabel: currentPeriodStatus.periodLabel,
+    nudges: applySmartNudgeStates(periodKey, nudges, snoozed, dismissed),
+  };
+}
+
+function applySmartNudgeStates(
+  periodKey: string,
+  nudges: SmartNudge[],
+  snoozed: SnoozedSmartNudgeMap,
+  dismissed: DismissedSmartNudgeMap
+): SmartNudge[] {
+  return nudges
+    .map((nudge) => {
+      const snoozeKey = buildSmartNudgeSnoozeKey(periodKey, nudge.key);
+      return {
+        ...nudge,
+        snoozeKey,
+      };
+    })
+    .filter(
+      (nudge) =>
+        !nudge.snoozeKey || (!snoozed[nudge.snoozeKey] && !dismissed[nudge.snoozeKey])
+    );
 }
 
 async function getAnalyticsData(periodMode: PeriodMode): Promise<DashboardAnalytics> {
@@ -426,6 +504,142 @@ async function getCurrentActionItems(
   }
 }
 
+async function getSmartNudgesStatus(
+  periodMode: PeriodMode,
+  currentPeriodStatus: CurrentPeriodStatus,
+  budgetStatus: VariableBudgetStatus
+): Promise<SmartNudgesStatus> {
+  const [snoozed, dismissed] = await Promise.all([
+    getSmartNudgeSnoozes(),
+    getSmartNudgeDismissals(),
+  ]);
+  const currentPeriod = buildPeriods(periodMode, dayjs(), 1)[0];
+  const periodKey = currentPeriod?.key || budgetStatus.periodKey || dayjs().format('YYYY-MM');
+  if (!currentPeriod) {
+    return buildFallbackSmartNudgesStatus(
+      periodKey,
+      currentPeriodStatus,
+      budgetStatus,
+      snoozed,
+      dismissed
+    );
+  }
+
+  try {
+    const staleWindowStart = dayjs().subtract(7, 'day').startOf('day').toDate();
+    const failedWindowStart = dayjs().subtract(14, 'day').startOf('day').toDate();
+
+    const [uncategorizedCount, failedUploadsCount, recentSuccessfulUploadsCount] = await Promise.all([
+      prisma.transaction.count({
+        where: {
+          isExcluded: false,
+          categoryId: null,
+          date: {
+            gte: currentPeriod.startDate.startOf('day').toDate(),
+            lte: currentPeriod.endDate.endOf('day').toDate(),
+          },
+        },
+      }),
+      prisma.fileUpload.count({
+        where: {
+          status: 'FAILED',
+          processedAt: {
+            gte: failedWindowStart,
+          },
+        },
+      }),
+      prisma.fileUpload.count({
+        where: {
+          status: 'COMPLETED',
+          processedAt: {
+            gte: staleWindowStart,
+          },
+        },
+      }),
+    ]);
+
+    const nudges: SmartNudge[] = [];
+
+    if (currentPeriodStatus.isPartial && currentPeriodStatus.missingSources.length > 0) {
+      nudges.push({
+        key: 'missing-sources',
+        title: 'התמונה של התקופה עדיין חלקית',
+        description: `חסרים ${currentPeriodStatus.missingSources.join(' ו־')} ולכן כדאי להשלים נתונים לפני שמסתמכים על המצב הנוכחי`,
+        href: '/upload',
+        actionLabel: 'השלם העלאה',
+        tone: 'warning',
+      });
+    }
+
+    if (recentSuccessfulUploadsCount === 0) {
+      nudges.push({
+        key: 'stale-uploads',
+        title: 'לא נקלטו העלאות חדשות לאחרונה',
+        description: 'ב־7 הימים האחרונים לא נקלטו קבצים חדשים. אם יש פעילות חדשה, זה זמן טוב לעדכן את המערכת',
+        href: '/upload',
+        actionLabel: 'העלה עכשיו',
+        tone: 'info',
+      });
+    }
+
+    if (uncategorizedCount > 0) {
+      nudges.push({
+        key: 'uncategorized',
+        title: 'יש תנועות שמחכות לשיוך',
+        description: `יש כרגע ${uncategorizedCount} תנועות לא מסווגות בתקופה הנוכחית, וזה עלול לטשטש את תמונת המצב`,
+        href: '/transactions?categoryId=uncategorized',
+        actionLabel: 'פתח לא מסווגות',
+        tone: 'warning',
+      });
+    }
+
+    if (failedUploadsCount > 0) {
+      nudges.push({
+        key: 'failed-uploads',
+        title: 'נמצאו העלאות שנכשלו לאחרונה',
+        description: `ב־14 הימים האחרונים נמצאו ${failedUploadsCount} העלאות שנכשלו, ויכול להיות שחסרים נתונים שכדאי להשלים`,
+        href: '/upload',
+        actionLabel: 'בדוק העלאות',
+        tone: 'danger',
+      });
+    }
+
+    if (budgetStatus.paceStatus === 'over') {
+      nudges.push({
+        key: 'budget-overrun',
+        title: 'בקצב הנוכחי צפויה חריגה במשתנות',
+        description: 'תחזית סוף התקופה מראה חריגה צפויה מהתקציב המשתנה, ולכן כדאי לעצור ולבצע התאמה כבר עכשיו',
+        href: '/monthly-summary',
+        actionLabel: 'פתח תקציב',
+        tone: 'danger',
+      });
+    } else if (budgetStatus.paceStatus === 'warning') {
+      nudges.push({
+        key: 'budget-warning',
+        title: 'קצב המשתנות מתחיל לאותת על סיכון',
+        description: 'כרגע עדיין אפשר להישאר במסגרת, אבל הקצב כבר מתחיל לעלות מעל מה שתוכנן',
+        href: '/monthly-summary',
+        actionLabel: 'בדוק קצב',
+        tone: 'warning',
+      });
+    }
+
+    return {
+      periodLabel: currentPeriodStatus.periodLabel,
+      nudges: applySmartNudgeStates(periodKey, nudges, snoozed, dismissed),
+    };
+  } catch (error) {
+    console.error('Dashboard smart nudges load error:', error);
+    return buildFallbackSmartNudgesStatus(
+      periodKey,
+      currentPeriodStatus,
+      budgetStatus,
+      snoozed,
+      dismissed
+    );
+  }
+}
+
 async function getRecentTransactions(): Promise<RecentTransactionItem[]> {
   const transactions = await prisma.transaction.findMany({
     where: { isExcluded: false },
@@ -660,6 +874,7 @@ export default async function HomePage() {
   }
 
   const currentActionItems = await getCurrentActionItems(periodMode, currentPeriodStatus, budgetStatus);
+  const smartNudges = await getSmartNudgesStatus(periodMode, currentPeriodStatus, budgetStatus);
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -703,6 +918,8 @@ export default async function HomePage() {
       </div>
 
       <CurrentPeriodStatusCard status={currentPeriodStatus} />
+
+      <SmartNudgesCard status={smartNudges} />
 
       <CurrentActionItemsCard status={currentActionItems} />
 

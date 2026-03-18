@@ -785,3 +785,97 @@ Deploy/runtime impact:
 - Normal deploy
 - No DB migration
 - Dashboard variable-budget status now performs additional in-memory forecast calculations from already loaded current-period plan and spend data
+
+### 2026-03-17 - Added Smart Nudges to the dashboard
+Why:
+- The dashboard already had current-period status and follow-up items, but it still needed a more proactive layer that warns before the user drifts into stale data or avoidable budget issues
+- Users asked to make the system more "here and now", so the dashboard should surface timely nudges instead of waiting for manual inspection
+
+What changed:
+- Added a new `התראות חכמות` dashboard card that surfaces proactive current-period nudges
+- Added nudges for partial current-period coverage when expected `עו"ש` or `אשראי` data is still missing
+- Added nudges for stale uploads when no successful uploads were processed in the last 7 days
+- Added nudges for recent failed uploads, uncategorized current-period transactions, and variable-budget pace risk
+- Added a fault-tolerant server-side loader and fallback state so the dashboard keeps rendering even if one of the nudge queries fails
+
+Files touched:
+- `/src/app/page.tsx`
+- `/src/components/dashboard/SmartNudgesCard.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- No new environment variables
+- Dashboard now performs one additional server-side pass for smart nudges based on upload freshness, failed uploads, uncategorized transactions, missing current-period sources, and variable-budget pace
+
+### 2026-03-18 - Added one-week snooze for Smart Nudges
+Why:
+- Smart Nudges were useful, but users needed a way to dismiss a nudge temporarily without having it immediately reappear after refresh
+- The snooze must persist per active period so a warning can be hidden for the current billing/calendar window without muting the same signal forever
+
+What changed:
+- Added persistent Smart Nudge snooze storage in `Setting` using a period-scoped key format
+- Added a dashboard API route for reading and updating snoozed Smart Nudges without adding a migration
+- Updated Smart Nudge loading on the dashboard so nudges are filtered server-side when their period-scoped snooze is still active
+- Added a new `השהה לשבוע` action inside the Smart Nudges card, with immediate client-side removal and toast feedback after success
+- Kept expired snoozes self-cleaning so the stored payload stays compact and old dismissals do not accumulate
+
+Files touched:
+- `/src/lib/smart-nudge-snooze.ts`
+- `/src/app/api/dashboard/smart-nudges-snooze/route.ts`
+- `/src/app/page.tsx`
+- `/src/components/dashboard/SmartNudgesCard.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- No new environment variables
+- Dashboard now performs one additional `Setting` lookup to filter active Smart Nudges by snooze state
+
+### 2026-03-18 - Added persistent dismiss for Smart Nudges
+Why:
+- A one-week snooze was useful, but users also needed a stronger “handled for this period” action so accepted nudges do not come back again after refresh during the same billing/calendar window
+- Some dashboard nudges are informational once acknowledged, so hiding them only for seven days was still too noisy
+
+What changed:
+- Added persistent dismissed Smart Nudge storage in `Setting` using the same period-scoped key format as snoozes
+- Extended the Smart Nudge state API to support `dismiss`, `clear`, and combined snooze/dismiss normalization
+- Updated dashboard loading so both snoozed and dismissed nudges are filtered server-side before render
+- Added a new `סגור לתקופה` action in the Smart Nudges card, with immediate client-side removal and toast feedback
+
+Files touched:
+- `/src/lib/smart-nudge-snooze.ts`
+- `/src/app/api/dashboard/smart-nudges-snooze/route.ts`
+- `/src/app/page.tsx`
+- `/src/components/dashboard/SmartNudgesCard.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- No new environment variables
+- Dashboard now performs one additional `Setting` lookup for dismissed Smart Nudges alongside the existing snooze-state lookup
+
+### 2026-03-18 - Added direct recurring removal via repeat icon and clearer mobile bottom-nav labels
+Why:
+- On mobile, removing an item from fixed expenses was hard to discover because the only remove button depended on desktop hover behavior
+- The short mobile bottom-nav labels were too vague and made it hard to understand the destination of each tab at a glance
+
+What changed:
+- Changed recurring-expense rows so the blue repeat icon itself now removes the item from fixed expenses
+- Removed the hidden hover-only `X` action from recurring rows, since the repeat icon now serves as the single clear removal affordance
+- Expanded mobile bottom-nav labels to `לוח בקרה`, `סיכום חודשי`, and `הוצאות קבועות`
+- Updated the bottom-nav item layout to support two-line labels cleanly on mobile
+
+Files touched:
+- `/src/components/recurring/RecurringExpensesList.tsx`
+- `/src/components/Sidebar.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- No new environment variables
+- Mobile recurring removal now happens directly from the repeat icon, and the bottom navigation uses taller wrapped labels

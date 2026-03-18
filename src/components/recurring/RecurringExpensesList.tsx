@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { SummaryCard } from '@/components/dashboard/SummaryCard';
-import { Repeat, X } from 'lucide-react';
+import { Repeat } from 'lucide-react';
 import { showToast } from '@/components/ui/Toast';
 import { isLikelySameMerchant } from '@/lib/merchantSimilarity';
 
@@ -310,9 +310,17 @@ export function RecurringExpensesList({
 
                   <div className="divide-y divide-gray-100">
                     {data.items.map((item) => (
-                      <div key={item.key} className="group px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 hover:bg-gray-50">
+                      <div key={item.key} className="px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 hover:bg-gray-50">
                         <div className="flex items-start gap-3 flex-1 min-w-0">
-                          <Repeat className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveRecurringItem(item)}
+                            className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-blue-500 transition-colors hover:bg-blue-50 hover:text-red-500"
+                            title="הסר מהוצאות קבועות"
+                            aria-label={`הסר את ${item.description} מהוצאות קבועות`}
+                          >
+                            <Repeat className="h-4 w-4" />
+                          </button>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-gray-900 break-words">{item.description}</p>
                             <p className="text-xs text-gray-500 mt-0.5">
@@ -329,13 +337,6 @@ export function RecurringExpensesList({
                           <span className="text-sm font-semibold text-red-600">
                             {formatCurrency(item.monthlyAmount)}
                           </span>
-                          <button
-                            onClick={() => handleRemoveRecurringItem(item)}
-                            className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                            title="הסר מהוצאות קבועות"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
                         </div>
                       </div>
                     ))}

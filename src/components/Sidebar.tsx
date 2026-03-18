@@ -20,10 +20,10 @@ const secondaryNavigation = [
 ];
 
 const mobileBottomNavigation = [
-  { name: 'לוח', href: '/', icon: LayoutDashboard },
+  { name: 'לוח בקרה', href: '/', icon: LayoutDashboard },
   { name: 'תנועות', href: '/transactions', icon: List },
-  { name: 'סיכום', href: '/monthly-summary', icon: CalendarDays },
-  { name: 'קבועות', href: '/recurring', icon: Repeat },
+  { name: 'סיכום חודשי', href: '/monthly-summary', icon: CalendarDays },
+  { name: 'הוצאות קבועות', href: '/recurring', icon: Repeat },
 ];
 
 export function Sidebar() {
@@ -155,17 +155,19 @@ export function Sidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  className={`flex h-14 flex-col items-center justify-center rounded-lg transition-colors ${
-                    isActive
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-                  }`}
-                >
-                  <item.icon className="h-4 w-4" />
-                  <span className="mt-1 text-[11px] font-medium leading-none">{item.name}</span>
-                </Link>
-              </li>
-            );
+                className={`flex min-h-[4.5rem] flex-col items-center justify-center rounded-lg px-1 py-2 text-center transition-colors ${
+                  isActive
+                    ? 'bg-blue-50 text-blue-700'
+                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                }`}
+              >
+                <item.icon className="h-4 w-4" />
+                <span className="mt-1 max-w-full whitespace-normal text-[10px] font-medium leading-tight">
+                  {item.name}
+                </span>
+              </Link>
+            </li>
+          );
           })}
         </ul>
       </nav>

@@ -56,6 +56,21 @@ function getItemIcon(key: string) {
   }
 }
 
+function getActionLabel(key: string) {
+  switch (key) {
+    case 'missing-sources':
+      return 'השלם נתונים';
+    case 'failed-uploads':
+      return 'בדוק העלאות';
+    case 'budget-alerts':
+      return 'בדוק תקציב';
+    case 'uncategorized':
+      return 'שייך תנועות';
+    default:
+      return 'פתח';
+  }
+}
+
 export function CurrentActionItemsCard({ status }: { status: CurrentActionItemsStatus }) {
   if (status.items.length === 0) {
     return (
@@ -68,7 +83,7 @@ export function CurrentActionItemsCard({ status }: { status: CurrentActionItemsS
             <h3 className="text-base font-semibold text-gray-900 sm:text-lg">לטיפול עכשיו</h3>
             <p className="mt-1 text-sm text-gray-500">תקופה נוכחית: {status.periodLabel}</p>
             <p className="mt-3 text-sm text-green-800">
-              אין כרגע פעולות דחופות. הנתונים השוטפים נראים מסודרים.
+              אין כרגע משימות פתוחות לטיפול. המצב השוטף של התקופה נראה יציב ומעודכן.
             </p>
           </div>
         </div>
@@ -89,7 +104,7 @@ export function CurrentActionItemsCard({ status }: { status: CurrentActionItemsS
       </div>
 
       <p className="mt-3 text-sm text-gray-600">
-        אלו הדברים שכדאי לסגור עכשיו כדי שתמונת המצב של התקופה תהיה אמינה ושימושית.
+        אלו הדברים שכדאי לסגור עכשיו כדי שהתמונה של התקופה תהיה מלאה, נקייה וקלה יותר לקבלת החלטות.
       </p>
 
       <div className="mt-4 grid gap-3">
@@ -121,7 +136,7 @@ export function CurrentActionItemsCard({ status }: { status: CurrentActionItemsS
                 href={item.href}
                 className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
               >
-                פתח
+                {getActionLabel(item.key)}
                 <ArrowLeft className="h-4 w-4" />
               </Link>
             </div>

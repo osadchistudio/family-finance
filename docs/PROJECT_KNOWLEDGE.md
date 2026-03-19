@@ -263,6 +263,27 @@ Deploy/runtime impact:
 - Requires `npm install` on deploy because `pdf-parse` was added as a direct dependency
 - Existing compacted Isracard rows can be repaired by re-uploading the same PDF after deploy
 
+### 2026-03-19 - Fixed mobile category visibility in the monthly summary variable budget planner
+Why:
+- On mobile, the variable budget planner in `/monthly-summary` used the same four-column table layout as desktop
+- That layout squeezed the category column so tightly that category names were effectively unreadable on phones, making budget review and editing difficult
+
+What changed:
+- Added a mobile-only stacked row layout for the variable budget planner while preserving the existing desktop table for `sm` and larger screens
+- Moved the category name to a dedicated wrapped text block so long category names are visible instead of truncated off-screen
+- Reorganized the mobile row to show recommended amount, actual amount, remaining/overrun state, and budget input in a vertical layout that fits narrow screens
+- Hid the desktop table header on mobile because the new stacked cards no longer rely on the four-column heading row
+
+Files touched:
+- `/src/components/monthly-summary/VariableBudgetPlanner.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy required
+- No DB migration
+- No new environment variables
+- Mobile-only UI improvement for the monthly summary budget planner; desktop/tablet layout remains unchanged
+
 ### 2026-03-07 - Telegram reminder engine MVP
 Why:
 - Needed proactive freshness reminders because the product still relies on manual data uploads
@@ -922,3 +943,49 @@ Deploy/runtime impact:
 - No DB migration
 - No new environment variables
 - Merchant renames that target an already-existing canonical description should now merge cleanly instead of failing on the unique transaction constraint
+
+### 2026-03-19 - Prioritized learned merchant history before broad auto-categorization rules and AI
+Why:
+- Known merchants such as `אייזיקס` and `ניצת הדובדבן` were occasionally drifting into the wrong category on fresh uploads, even though previous months had already taught the system they belong under `סופר`
+- The old categorization order let broader substring matches and AI suggestions override a stronger merchant-history signal, which reduced trust in recurring month-over-month categorization
+
+What changed:
+- Kept exact keyword matches as the first and strongest categorization signal
+- Moved learned merchant-history matching ahead of broad `contains` keyword rules inside the shared keyword categorizer, so previously learned merchants now win before generic text patterns
+- Updated bulk auto-categorization to first classify descriptions locally using keywords and learned merchant history, and only send unresolved descriptions to AI
+- Updated single-transaction auto-categorization to use the same precedence order and report whether the result came from `history`, `keywords`, or `ai`
+- Reduced unnecessary AI calls for descriptions the system already understands confidently from prior categorized history
+
+Files touched:
+- `/src/services/categorization/KeywordCategorizer.ts`
+- `/src/app/api/transactions/auto-categorize/route.ts`
+- `/src/app/api/transactions/[id]/auto-categorize/route.ts`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- No new environment variables
+- Upload-time categorization and both AI categorization flows now prefer learned merchant history over broad generic rules
+- AI usage should decrease slightly because already-learned merchants are resolved before being sent to the model
+
+### 2026-03-19 - Made learned merchant history choose the dominant category per merchant
+Why:
+- Some merchants that clearly belong to one recurring category, such as `אייזיקס` and `ניצת הדובדבן`, still drifted into the wrong category on fresh uploads
+- The previous historical-learning logic kept multiple category candidates for the same merchant if that merchant had ever been categorized inconsistently, which let a single bad historical row outweigh the real long-term pattern
+
+What changed:
+- Changed historical merchant learning to group categorized transactions by normalized merchant text instead of keeping separate historical candidates per `merchant + category`
+- Added dominant-category selection per merchant, so only the strongest recurring category survives into the learned-history matcher
+- Marked mixed-history merchants as ambiguous and skipped them from learned-history matching instead of confidently choosing a weak signal
+- Added a small confidence boost for merchants that appeared multiple times in the same category, which helps stable recurring merchants win over generic broad keyword rules
+
+Files touched:
+- `/src/services/categorization/KeywordCategorizer.ts`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- No new environment variables
+- Fresh upload-time categorization should now be more consistent for repeat merchants that occasionally had one-off wrong historical categorization

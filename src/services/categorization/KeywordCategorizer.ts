@@ -14,6 +14,7 @@ export interface HistoricalCategorizationCandidate {
   merchantName?: string | null;
   categoryId: string;
   categoryName: string;
+  sampleCount: number;
 }
 
 interface KeywordWithCategory extends CategoryKeyword {
@@ -57,27 +58,81 @@ export class KeywordCategorizer {
       take: 4000,
     });
 
-    const deduped = new Map<string, HistoricalCategorizationCandidate>();
+    const groupedByMerchant = new Map<
+      string,
+      {
+        description: string;
+        merchantName?: string | null;
+        categories: Map<string, { categoryName: string; count: number }>;
+      }
+    >();
+
     for (const tx of transactions) {
       const categoryId = tx.categoryId;
       if (!categoryId) {
         continue;
       }
 
-      const candidate: HistoricalCategorizationCandidate = {
+      const merchantKey = compactText(tx.merchantName || tx.description);
+      if (!merchantKey) {
+        continue;
+      }
+
+      const existingGroup = groupedByMerchant.get(merchantKey) ?? {
         description: tx.description,
         merchantName: tx.merchantName,
-        categoryId,
-        categoryName: tx.category?.name ?? 'לא מסווג',
+        categories: new Map<string, { categoryName: string; count: number }>(),
       };
 
-      const key = `${categoryId}:${compactText(tx.merchantName || tx.description)}`;
-      if (!deduped.has(key)) {
-        deduped.set(key, candidate);
-      }
+      const existingCategory = existingGroup.categories.get(categoryId) ?? {
+        categoryName: tx.category?.name ?? 'לא מסווג',
+        count: 0,
+      };
+
+      existingCategory.count += 1;
+      existingGroup.categories.set(categoryId, existingCategory);
+      groupedByMerchant.set(merchantKey, existingGroup);
     }
 
-    return [...deduped.values()];
+    const dominantCandidates: HistoricalCategorizationCandidate[] = [];
+
+    for (const group of groupedByMerchant.values()) {
+      const rankedCategories = [...group.categories.entries()]
+        .map(([categoryId, value]) => ({
+          categoryId,
+          categoryName: value.categoryName,
+          count: value.count,
+        }))
+        .sort((left, right) => right.count - left.count);
+
+      const topCategory = rankedCategories[0];
+      const secondCategory = rankedCategories[1];
+
+      if (!topCategory) {
+        continue;
+      }
+
+      const isAmbiguous =
+        secondCategory &&
+        (
+          topCategory.count === secondCategory.count ||
+          topCategory.count < 2
+        );
+
+      if (isAmbiguous) {
+        continue;
+      }
+
+      dominantCandidates.push({
+        description: group.description,
+        merchantName: group.merchantName,
+        categoryId: topCategory.categoryId,
+        categoryName: topCategory.categoryName,
+        sampleCount: topCategory.count,
+      });
+    }
+
+    return dominantCandidates;
   }
 
   async categorize(
@@ -108,7 +163,36 @@ export class KeywordCategorizer {
       }
     }
 
-    // Then try contains matches
+    const historicalCandidates = options?.historicalCandidates ?? [];
+    let bestHistoricalMatch: CategorizationResult | null = null;
+    let bestHistoricalScore = 0;
+
+    for (const candidate of historicalCandidates) {
+      const similarityScore = merchantSimilarityScore(
+        description,
+        candidate.merchantName || candidate.description
+      );
+      const score = Math.min(
+        similarityScore + Math.min(Math.max(candidate.sampleCount - 1, 0) * 0.01, 0.03),
+        0.99
+      );
+
+      if (similarityScore >= 0.88 && score > bestHistoricalScore) {
+        bestHistoricalScore = score;
+        bestHistoricalMatch = {
+          categoryId: candidate.categoryId,
+          categoryName: candidate.categoryName,
+          confidence: Math.min(score, 0.97),
+          matchedKeyword: `history:${candidate.merchantName || candidate.description}`,
+        };
+      }
+    }
+
+    if (bestHistoricalMatch) {
+      return bestHistoricalMatch;
+    }
+
+    // Only after exact and learned-history matches do we try broader contains rules.
     let bestMatch: CategorizationResult | null = null;
     let bestMatchLength = 0;
 
@@ -136,32 +220,7 @@ export class KeywordCategorizer {
       }
     }
 
-    if (bestMatch) {
-      return bestMatch;
-    }
-
-    const historicalCandidates = options?.historicalCandidates ?? [];
-    let bestHistoricalMatch: CategorizationResult | null = null;
-    let bestHistoricalScore = 0;
-
-    for (const candidate of historicalCandidates) {
-      const score = merchantSimilarityScore(
-        description,
-        candidate.merchantName || candidate.description
-      );
-
-      if (score >= 0.88 && score > bestHistoricalScore) {
-        bestHistoricalScore = score;
-        bestHistoricalMatch = {
-          categoryId: candidate.categoryId,
-          categoryName: candidate.categoryName,
-          confidence: Math.min(score, 0.97),
-          matchedKeyword: `history:${candidate.merchantName || candidate.description}`,
-        };
-      }
-    }
-
-    return bestHistoricalMatch;
+    return bestMatch;
   }
 
   async categorizeMany(descriptions: string[]): Promise<Map<string, CategorizationResult | null>> {

@@ -9,6 +9,7 @@ import {
   resolveOpenAiApiKey,
 } from '@/lib/autoCategorize';
 import { extractMerchantSignature, isLikelySameMerchant } from '@/lib/merchantSimilarity';
+import { keywordCategorizer } from '@/services/categorization/KeywordCategorizer';
 
 const MAX_SAFE_SIMILAR_UPDATES = 15;
 
@@ -45,30 +46,41 @@ export async function POST(
       },
     });
 
-    const openaiKey = await resolveOpenAiApiKey();
-    const categorizations = await identifyDescriptions(
-      [transaction.description],
-      categories,
-      openaiKey,
-      { includeKeywordFallback: false }
-    );
+    const historicalCandidates = await keywordCategorizer.loadHistoricalCandidates();
+    const learnedCategorization = await keywordCategorizer.categorize(transaction.description, {
+      historicalCandidates,
+    });
 
-    const categoryName = resolveCategoryForDescription(categorizations, transaction.description);
-    if (!categoryName) {
-      return NextResponse.json({
-        success: true,
-        categorized: false,
-        message: 'לא נמצאה קטגוריה מתאימה לעסקה הזו',
-      });
-    }
+    let category = learnedCategorization
+      ? categories.find(candidate => candidate.id === learnedCategorization.categoryId)
+      : undefined;
 
-    const category = findCategoryByName(categories, categoryName);
     if (!category) {
-      return NextResponse.json({
-        success: true,
-        categorized: false,
-        message: 'ה-AI החזיר קטגוריה לא זמינה',
-      });
+      const openaiKey = await resolveOpenAiApiKey();
+      const categorizations = await identifyDescriptions(
+        [transaction.description],
+        categories,
+        openaiKey,
+        { includeKeywordFallback: false }
+      );
+
+      const categoryName = resolveCategoryForDescription(categorizations, transaction.description);
+      if (!categoryName) {
+        return NextResponse.json({
+          success: true,
+          categorized: false,
+          message: 'לא נמצאה קטגוריה מתאימה לעסקה הזו',
+        });
+      }
+
+      category = findCategoryByName(categories, categoryName);
+      if (!category) {
+        return NextResponse.json({
+          success: true,
+          categorized: false,
+          message: 'ה-AI החזיר קטגוריה לא זמינה',
+        });
+      }
     }
 
     let currentUpdated = 0;
@@ -168,6 +180,11 @@ export async function POST(
         icon: category.icon || '📁',
         color: category.color || '#6B7280',
       },
+      source: learnedCategorization?.matchedKeyword.startsWith('history:')
+        ? 'history'
+        : learnedCategorization
+          ? 'keywords'
+          : 'ai',
       message: categorized
         ? null
         : 'בוצעה בדיקת AI והתנועה כבר משויכת לקטגוריה המתאימה',

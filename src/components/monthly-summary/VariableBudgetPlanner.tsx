@@ -358,7 +358,7 @@ export function VariableBudgetPlanner({
       )}
 
       <div className="border border-gray-100 rounded-lg overflow-hidden">
-        <div className="grid grid-cols-[minmax(0,2fr)_minmax(100px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-2 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-600">
+        <div className="hidden sm:grid grid-cols-[minmax(0,2fr)_minmax(100px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-2 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-600">
           <span>קטגוריה</span>
           <span className="text-left">מומלץ</span>
           <span className="text-left">תקציב</span>
@@ -370,37 +370,81 @@ export function VariableBudgetPlanner({
             <div className="px-3 py-8 text-sm text-gray-500 text-center">לא נמצאו קטגוריות</div>
           ) : (
             rows.map((row) => (
-              <div
-                key={row.category.id}
-                className="grid grid-cols-[minmax(0,2fr)_minmax(100px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-2 items-center px-3 py-2 border-t border-gray-100"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-800 truncate">
-                    {row.category.icon} {row.category.name}
-                  </p>
-                  {row.planned > 0 && (
-                    <p className={`text-xs mt-0.5 ${row.remaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {row.remaining >= 0 ? 'נותר' : 'חריגה'}: {formatCurrency(Math.abs(row.remaining))}
+              <div key={row.category.id} className="border-t border-gray-100">
+                <div className="sm:hidden px-3 py-3 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-800 break-words">
+                        {row.category.icon} {row.category.name}
+                      </p>
+                      {row.planned > 0 && (
+                        <p className={`text-xs mt-1 ${row.remaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {row.remaining >= 0 ? 'נותר' : 'חריגה'}: {formatCurrency(Math.abs(row.remaining))}
+                        </p>
+                      )}
+                    </div>
+                    <div className={`shrink-0 text-sm font-medium ${row.planned > 0 && row.ratio > 1 ? 'text-red-600' : 'text-gray-600'}`}>
+                      {formatCurrency(row.actual)}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-gray-50 px-3 py-2">
+                      <p className="text-[11px] font-medium text-gray-500">מומלץ</p>
+                      <p className="mt-1 text-sm text-gray-700">{formatCurrency(row.suggested)}</p>
+                    </div>
+
+                    <div className="rounded-lg bg-gray-50 px-3 py-2">
+                      <p className="text-[11px] font-medium text-gray-500">בפועל</p>
+                      <p className={`mt-1 text-sm ${row.planned > 0 && row.ratio > 1 ? 'text-red-600 font-semibold' : 'text-gray-700'}`}>
+                        {formatCurrency(row.actual)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-500 mb-1">תקציב</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="1"
+                      value={row.planned > 0 ? row.planned : ''}
+                      onChange={(event) => setCategoryBudget(row.category.id, event.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+
+                <div className="hidden sm:grid grid-cols-[minmax(0,2fr)_minmax(100px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-2 items-center px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">
+                      {row.category.icon} {row.category.name}
                     </p>
-                  )}
-                </div>
+                    {row.planned > 0 && (
+                      <p className={`text-xs mt-0.5 ${row.remaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {row.remaining >= 0 ? 'נותר' : 'חריגה'}: {formatCurrency(Math.abs(row.remaining))}
+                      </p>
+                    )}
+                  </div>
 
-                <div className="text-sm text-gray-500 text-left">{formatCurrency(row.suggested)}</div>
+                  <div className="text-sm text-gray-500 text-left">{formatCurrency(row.suggested)}</div>
 
-                <div className="text-left">
-                  <input
-                    type="number"
-                    min={0}
-                    step="1"
-                    value={row.planned > 0 ? row.planned : ''}
-                    onChange={(event) => setCategoryBudget(row.category.id, event.target.value)}
-                    className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm"
-                    placeholder="0"
-                  />
-                </div>
+                  <div className="text-left">
+                    <input
+                      type="number"
+                      min={0}
+                      step="1"
+                      value={row.planned > 0 ? row.planned : ''}
+                      onChange={(event) => setCategoryBudget(row.category.id, event.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm"
+                      placeholder="0"
+                    />
+                  </div>
 
-                <div className={`text-sm text-left ${row.planned > 0 && row.ratio > 1 ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
-                  {formatCurrency(row.actual)}
+                  <div className={`text-sm text-left ${row.planned > 0 && row.ratio > 1 ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
+                    {formatCurrency(row.actual)}
+                  </div>
                 </div>
               </div>
             ))

@@ -7,6 +7,7 @@ import {
   resolveCategoryForDescription,
   resolveOpenAiApiKey,
 } from '@/lib/autoCategorize';
+import { keywordCategorizer } from '@/services/categorization/KeywordCategorizer';
 
 /**
  * Auto-categorize uncategorized transactions using AI
@@ -50,8 +51,24 @@ export async function POST() {
     // Prepare business descriptions for AI
     const uniqueDescriptions = [...new Set(uncategorizedTransactions.map(t => t.description))];
 
+    const historicalCandidates = await keywordCategorizer.loadHistoricalCandidates();
+    const learnedCategorizationMap = new Map<string, Awaited<ReturnType<typeof keywordCategorizer.categorize>>>();
+    const unresolvedDescriptions: string[] = [];
+
+    for (const description of uniqueDescriptions) {
+      const learnedCategorization = await keywordCategorizer.categorize(description, {
+        historicalCandidates,
+      });
+
+      if (learnedCategorization) {
+        learnedCategorizationMap.set(description, learnedCategorization);
+      } else {
+        unresolvedDescriptions.push(description);
+      }
+    }
+
     const openaiKey = await resolveOpenAiApiKey();
-    const descriptionChunks = chunkArray(uniqueDescriptions, 40);
+    const descriptionChunks = chunkArray(unresolvedDescriptions, 40);
     const categorizations: Record<string, string> = {};
 
     for (const chunk of descriptionChunks) {
@@ -64,25 +81,28 @@ export async function POST() {
     const keywordsToAdd: { categoryId: string; keyword: string }[] = [];
 
     for (const tx of uncategorizedTransactions) {
-      const categoryName = resolveCategoryForDescription(categorizations, tx.description);
-      if (categoryName) {
-        const category = findCategoryByName(categories, categoryName);
+      const learnedCategorization = learnedCategorizationMap.get(tx.description);
+      const category = learnedCategorization
+        ? categories.find(candidate => candidate.id === learnedCategorization.categoryId)
+        : (() => {
+            const categoryName = resolveCategoryForDescription(categorizations, tx.description);
+            return categoryName ? findCategoryByName(categories, categoryName) : undefined;
+          })();
 
-        if (category) {
-          await prisma.transaction.update({
-            where: { id: tx.id },
-            data: {
-              categoryId: category.id,
-              isAutoCategorized: true,
-            },
-          });
-          categorizedCount++;
+      if (category) {
+        await prisma.transaction.update({
+          where: { id: tx.id },
+          data: {
+            categoryId: category.id,
+            isAutoCategorized: true,
+          },
+        });
+        categorizedCount++;
 
-          // Remember to add keyword
-          const keyword = extractKeyword(tx.description);
-          if (keyword && !keywordsToAdd.find(k => k.keyword === keyword && k.categoryId === category.id)) {
-            keywordsToAdd.push({ categoryId: category.id, keyword });
-          }
+        // Remember to add keyword
+        const keyword = extractKeyword(tx.description);
+        if (keyword && !keywordsToAdd.find(k => k.keyword === keyword && k.categoryId === category.id)) {
+          keywordsToAdd.push({ categoryId: category.id, keyword });
         }
       }
     }
@@ -109,6 +129,8 @@ export async function POST() {
       categorized: categorizedCount,
       total: uncategorizedTransactions.length,
       processedDescriptions: uniqueDescriptions.length,
+      learnedFromHistoryOrKeywords: learnedCategorizationMap.size,
+      sentToAi: unresolvedDescriptions.length,
       newKeywords: keywordsToAdd.length,
     });
   } catch (error) {

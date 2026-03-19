@@ -53,11 +53,11 @@ export function VariableBudgetStatusCard({ status }: VariableBudgetStatusCardPro
     return (
       <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6 border border-blue-100">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-base sm:text-lg font-semibold text-gray-900">עמידה בתקציב משתנות</h3>
-            <p className="text-sm text-gray-500 mt-1">תקופה נוכחית: {status.periodLabel}</p>
-            <p className="text-sm text-gray-600 mt-3">אין עדיין תקציב משתנות לתקופה הזו</p>
-          </div>
+        <div>
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900">עמידה בתקציב משתנות</h3>
+          <p className="text-sm text-gray-500 mt-1">תקופה נוכחית: {status.periodLabel}</p>
+          <p className="text-sm text-gray-600 mt-3">עדיין לא הוגדר תקציב משתנות לתקופה הזו, ולכן אין תחזית שימושית לקצב הנוכחי</p>
+        </div>
           <div className="p-2.5 rounded-full bg-blue-50 text-blue-600">
             <Target className="h-5 w-5" />
           </div>
@@ -116,17 +116,17 @@ export function VariableBudgetStatusCard({ status }: VariableBudgetStatusCardPro
           <p className="text-lg font-bold text-gray-900 mt-1">{formatCurrency(status.plannedTotal)}</p>
         </div>
         <div className="rounded-lg border border-gray-100 p-3">
-          <p className="text-xs text-gray-500">בוצע</p>
+          <p className="text-xs text-gray-500">הוצאות בפועל</p>
           <p className="text-lg font-bold text-red-600 mt-1">{formatCurrency(status.actualTotal)}</p>
         </div>
         <div className="rounded-lg border border-gray-100 p-3">
-          <p className="text-xs text-gray-500">נותר</p>
+          <p className="text-xs text-gray-500">מרווח נותר</p>
           <p className={`text-lg font-bold mt-1 ${status.remainingTotal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
             {status.remainingTotal >= 0 ? '' : '-'}{formatCurrency(Math.abs(status.remainingTotal))}
           </p>
         </div>
         <div className="rounded-lg border border-gray-100 p-3">
-          <p className="text-xs text-gray-500">ניצול</p>
+          <p className="text-xs text-gray-500">ניצול עד כה</p>
           <p className={`text-lg font-bold mt-1 ${status.utilizationPercent > 100 ? 'text-red-600' : 'text-gray-900'}`}>
             {formatPercent(status.utilizationPercent)}
           </p>
@@ -179,7 +179,7 @@ export function VariableBudgetStatusCard({ status }: VariableBudgetStatusCardPro
               }`}
             >
               {status.plannedDailyAllowanceRemaining === null
-                ? 'אין ימים נותרים'
+                ? 'התקופה הסתיימה'
                 : status.plannedDailyAllowanceRemaining >= 0
                   ? formatCurrency(status.plannedDailyAllowanceRemaining)
                   : `-${formatCurrency(Math.abs(status.plannedDailyAllowanceRemaining))}`}
@@ -200,7 +200,7 @@ export function VariableBudgetStatusCard({ status }: VariableBudgetStatusCardPro
           />
         </div>
         <p className="mt-2 text-xs text-gray-600">
-          תחזית לפי {status.elapsedDays} ימים שכבר עברו מתוך {status.totalDays} בתקופה · שימוש צפוי {formatPercent(status.projectedUtilizationPercent)}
+          התחזית מבוססת על {status.elapsedDays} ימים שכבר עברו מתוך {status.totalDays} בתקופה · שימוש צפוי {formatPercent(status.projectedUtilizationPercent)}
         </p>
       </div>
 
@@ -231,7 +231,7 @@ export function VariableBudgetStatusCard({ status }: VariableBudgetStatusCardPro
       ) : (
         <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3 flex items-center gap-2 text-green-700">
           <CheckCircle2 className="h-4 w-4" />
-          <p className="text-sm">אין חריגות תקציב כרגע בקטגוריות שתוכננו</p>
+          <p className="text-sm">כרגע אין קטגוריות משתנות שחורגות או מתקרבות לתקרה שהוגדרה</p>
         </div>
       )}
 

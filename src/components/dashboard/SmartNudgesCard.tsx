@@ -22,6 +22,8 @@ export interface SmartNudge {
   href: string;
   actionLabel: string;
   tone: 'info' | 'warning' | 'danger';
+  priority?: 'high' | 'medium' | 'low';
+  priorityLabel?: string;
   snoozeKey?: string;
 }
 
@@ -71,13 +73,37 @@ function getNudgeIcon(key: string) {
   }
 }
 
+function priorityClasses(priority: SmartNudge['priority']) {
+  if (priority === 'high') {
+    return 'bg-red-100 text-red-700 border border-red-200';
+  }
+
+  if (priority === 'medium') {
+    return 'bg-amber-100 text-amber-800 border border-amber-200';
+  }
+
+  return 'bg-blue-100 text-blue-700 border border-blue-200';
+}
+
+function priorityRank(priority: SmartNudge['priority']) {
+  if (priority === 'high') return 0;
+  if (priority === 'medium') return 1;
+  return 2;
+}
+
 export function SmartNudgesCard({ status }: { status: SmartNudgesStatus }) {
-  const [visibleNudges, setVisibleNudges] = useState(status.nudges);
+  const [visibleNudges, setVisibleNudges] = useState(() =>
+    [...status.nudges].sort((left, right) => priorityRank(left.priority) - priorityRank(right.priority))
+  );
   const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
   const [pendingActionType, setPendingActionType] = useState<'snooze' | 'dismiss' | null>(null);
 
   useEffect(() => {
-    setVisibleNudges(status.nudges);
+    setVisibleNudges(
+      [...status.nudges].sort(
+        (left, right) => priorityRank(left.priority) - priorityRank(right.priority)
+      )
+    );
   }, [status.nudges]);
 
   async function handleStateChange(nudge: SmartNudge, action: 'snooze' | 'dismiss') {
@@ -180,7 +206,16 @@ export function SmartNudgesCard({ status }: { status: SmartNudgesStatus }) {
                   <Icon className="h-4 w-4" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-gray-900">{nudge.title}</h4>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-gray-900">{nudge.title}</h4>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${priorityClasses(
+                        nudge.priority
+                      )}`}
+                    >
+                      {nudge.priorityLabel || 'שווה בדיקה'}
+                    </span>
+                  </div>
                   <p className="mt-1 text-sm text-gray-600">{nudge.description}</p>
                 </div>
               </div>

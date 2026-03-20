@@ -184,6 +184,26 @@ Out of scope:
 
 ## Consolidated change log (major milestones)
 
+### 2026-03-20 - Fixed production build TypeScript error in single auto-categorize route
+Why:
+- The latest deploy failed during `next build`, which prevented `.next/standalone/server.js` from being generated and left production returning `502` behind Caddy
+- The failing code path in the single-transaction auto-categorize API accessed `.startsWith()` through an optional chain in a way TypeScript rejected during the production build
+
+What changed:
+- Updated both auto-categorize API routes to type Prisma category collections explicitly as `AutoCategorizeCategory[]`, so helper lookups like `findCategoryByName()` stay assignable during `next build`
+- Updated the single-transaction auto-categorize API response builder to compute the categorization source through a null-safe expression before returning JSON
+- Preserved the existing business behavior: historical learned matches still report `history`, learned keyword matches still report `keywords`, and AI fallbacks still report `ai`
+
+Files touched:
+- `/src/app/api/transactions/[id]/auto-categorize/route.ts`
+- `/src/app/api/transactions/auto-categorize/route.ts`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy required
+- No DB migration
+- No new environment variables
+- Restores successful production builds so the standalone server artifact can be generated again
 ### 2026-03-12 - Made manual transaction-name edits merge into existing categorized rows
 Why:
 - Correcting compacted merchant names such as `אייזקסמעדניגורמה` to an already-existing clean name triggered the transaction unique key and blocked the user with a duplicate error

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import {
+  type AutoCategorizeCategory,
   extractKeyword,
   findCategoryByName,
   identifyDescriptions,
@@ -42,7 +43,7 @@ export async function POST() {
     }
 
     // Get all categories with their keywords
-    const categories = await prisma.category.findMany({
+    const categories: AutoCategorizeCategory[] = await prisma.category.findMany({
       include: {
         keywords: true,
       },

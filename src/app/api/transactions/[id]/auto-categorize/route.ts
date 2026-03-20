@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import {
+  type AutoCategorizeCategory,
   extractKeyword,
   findCategoryByName,
   identifyDescriptions,
@@ -40,7 +41,7 @@ export async function POST(
       );
     }
 
-    const categories = await prisma.category.findMany({
+    const categories: AutoCategorizeCategory[] = await prisma.category.findMany({
       include: {
         keywords: true,
       },
@@ -161,6 +162,11 @@ export async function POST(
     }
 
     const categorized = currentUpdated > 0 || updatedSimilarIds.length > 0;
+    const categorizationSource = learnedCategorization?.matchedKeyword?.startsWith('history:')
+      ? 'history'
+      : learnedCategorization
+        ? 'keywords'
+        : 'ai';
 
     revalidatePath('/transactions');
     revalidatePath('/recurring');
@@ -180,11 +186,7 @@ export async function POST(
         icon: category.icon || '📁',
         color: category.color || '#6B7280',
       },
-      source: learnedCategorization?.matchedKeyword.startsWith('history:')
-        ? 'history'
-        : learnedCategorization
-          ? 'keywords'
-          : 'ai',
+      source: categorizationSource,
       message: categorized
         ? null
         : 'בוצעה בדיקת AI והתנועה כבר משויכת לקטגוריה המתאימה',

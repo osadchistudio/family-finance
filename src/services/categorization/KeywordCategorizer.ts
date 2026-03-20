@@ -48,6 +48,7 @@ export class KeywordCategorizer {
         description: true,
         merchantName: true,
         categoryId: true,
+        updatedAt: true,
         category: {
           select: {
             name: true,
@@ -55,15 +56,18 @@ export class KeywordCategorizer {
         },
       },
       orderBy: { updatedAt: 'desc' },
-      take: 4000,
     });
 
     const groupedByMerchant = new Map<
       string,
       {
-        description: string;
-        merchantName?: string | null;
-        categories: Map<string, { categoryName: string; count: number }>;
+        categories: Map<string, {
+          categoryName: string;
+          count: number;
+          latestUpdatedAt: Date;
+          description: string;
+          merchantName?: string | null;
+        }>;
       }
     >();
 
@@ -79,17 +83,29 @@ export class KeywordCategorizer {
       }
 
       const existingGroup = groupedByMerchant.get(merchantKey) ?? {
-        description: tx.description,
-        merchantName: tx.merchantName,
-        categories: new Map<string, { categoryName: string; count: number }>(),
+        categories: new Map<string, {
+          categoryName: string;
+          count: number;
+          latestUpdatedAt: Date;
+          description: string;
+          merchantName?: string | null;
+        }>(),
       };
 
       const existingCategory = existingGroup.categories.get(categoryId) ?? {
         categoryName: tx.category?.name ?? 'לא מסווג',
         count: 0,
+        latestUpdatedAt: tx.updatedAt,
+        description: tx.description,
+        merchantName: tx.merchantName,
       };
 
       existingCategory.count += 1;
+      if (tx.updatedAt >= existingCategory.latestUpdatedAt) {
+        existingCategory.latestUpdatedAt = tx.updatedAt;
+        existingCategory.description = tx.description;
+        existingCategory.merchantName = tx.merchantName;
+      }
       existingGroup.categories.set(categoryId, existingCategory);
       groupedByMerchant.set(merchantKey, existingGroup);
     }
@@ -102,21 +118,32 @@ export class KeywordCategorizer {
           categoryId,
           categoryName: value.categoryName,
           count: value.count,
+          latestUpdatedAt: value.latestUpdatedAt,
+          description: value.description,
+          merchantName: value.merchantName,
         }))
-        .sort((left, right) => right.count - left.count);
+        .sort((left, right) => {
+          if (right.count !== left.count) {
+            return right.count - left.count;
+          }
+          return right.latestUpdatedAt.getTime() - left.latestUpdatedAt.getTime();
+        });
 
       const topCategory = rankedCategories[0];
       const secondCategory = rankedCategories[1];
+      const totalCount = rankedCategories.reduce((sum, category) => sum + category.count, 0);
 
       if (!topCategory) {
         continue;
       }
 
+      const dominanceRatio = totalCount > 0 ? topCategory.count / totalCount : 0;
       const isAmbiguous =
-        secondCategory &&
+        topCategory.count < 2 ||
+        dominanceRatio < 0.7 ||
         (
-          topCategory.count === secondCategory.count ||
-          topCategory.count < 2
+          secondCategory &&
+          topCategory.count === secondCategory.count
         );
 
       if (isAmbiguous) {
@@ -124,8 +151,8 @@ export class KeywordCategorizer {
       }
 
       dominantCandidates.push({
-        description: group.description,
-        merchantName: group.merchantName,
+        description: topCategory.description,
+        merchantName: topCategory.merchantName,
         categoryId: topCategory.categoryId,
         categoryName: topCategory.categoryName,
         sampleCount: topCategory.count,

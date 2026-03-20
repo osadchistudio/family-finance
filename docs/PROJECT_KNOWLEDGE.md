@@ -184,6 +184,47 @@ Out of scope:
 
 ## Consolidated change log (major milestones)
 
+### 2026-03-20 - Hardened historical merchant-family categorization against noisy history
+Why:
+- The next priority after restoring production was to verify that merchant-history learning does not overfit on partial or noisy categorized history
+- The previous historical candidate builder only looked at the latest 4000 categorized transactions and could still accept weak dominant-category wins such as `2 vs 1`, which is too noisy for reliable merchant-family learning
+
+What changed:
+- Updated the historical categorization candidate builder to scan the full categorized transaction history instead of capping itself at the latest 4000 rows
+- Tightened dominant-category acceptance so a merchant family now needs both at least 2 samples and a stronger dominance ratio before it is eligible for learned-history categorization
+- Changed the representative sample used for each learned merchant family to come from the winning category itself, instead of whichever categorized row happened to be seen first in the group
+
+Files touched:
+- `/src/services/categorization/KeywordCategorizer.ts`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy required
+- No DB migration
+- No new environment variables
+- Historical merchant-based auto-categorization should now be more conservative and more stable across the full categorized history
+
+### 2026-03-20 - Stabilized merchant-name merges when renaming into an existing transaction
+Why:
+- Editing a merchant name into an already-existing canonical name still had edge cases where the DB merge succeeded only partially from the user's perspective
+- Similar-transaction propagation treated successful merges as skipped conflicts, and a rare duplicate race could still surface as a failed rename instead of attaching to the canonical row
+
+What changed:
+- Hardened `PATCH /api/transactions/[id]/description` so a late duplicate-key race now re-finds the canonical transaction and merges into it instead of returning a duplicate failure
+- Updated similar-name propagation to report real merges separately from in-place updates, including deleted duplicate IDs and the final canonical transactions that absorbed them
+- Updated the transactions UI to remove merged-away duplicates from the local list, refresh surviving canonical rows in place, and show success messages that distinguish between updated similar rows and merged similar rows
+
+Files touched:
+- `/src/app/api/transactions/[id]/description/route.ts`
+- `/src/components/transactions/TransactionList.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy required
+- No DB migration
+- No new environment variables
+- Merchant rename flows are now more reliable when the new name already exists on one or more matching transactions
+
 ### 2026-03-20 - Fixed production build TypeScript error in single auto-categorize route
 Why:
 - The latest deploy failed during `next build`, which prevented `.next/standalone/server.js` from being generated and left production returning `502` behind Caddy

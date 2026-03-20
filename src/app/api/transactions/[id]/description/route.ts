@@ -29,6 +29,19 @@ type InheritedCategory = {
   isAutoCategorized: boolean;
 };
 
+type DescriptionUpdateTransaction = Prisma.TransactionGetPayload<{
+  include: {
+    category: true;
+  };
+}>;
+
+type DescriptionUpdateResult = {
+  transaction: DescriptionUpdateTransaction;
+  mergedIntoExisting: boolean;
+  deletedTransactionId: string | null;
+  attachedToExistingCategory: boolean;
+};
+
 function mergeNotes(primary: string | null, secondary: string | null): string | null {
   const first = primary?.trim() || '';
   const second = secondary?.trim() || '';
@@ -141,7 +154,7 @@ async function mergeIntoExistingTransaction(
   targetId: string,
   description: string,
   inheritedCategory: InheritedCategory | null
-) {
+): Promise<DescriptionUpdateTransaction> {
   const target = await tx.transaction.findUnique({
     where: { id: targetId },
     include: {
@@ -195,7 +208,7 @@ async function updateDescriptionOrMerge(
   source: EditableTransaction,
   description: string,
   inheritedCategory: InheritedCategory | null
-) {
+): Promise<DescriptionUpdateResult> {
   const shouldInheritCategory = Boolean(inheritedCategory?.categoryId && !source.categoryId);
   const conflictingTransaction = await findConflictingTransaction(tx, source, description);
 
@@ -243,9 +256,27 @@ async function updateDescriptionOrMerge(
       throw error;
     }
 
-    // A rare race can still produce a unique conflict after the preflight check.
-    // Surface a controlled error instead of leaving the request with a generic DB failure.
-    throw new Error('Duplicate transaction detected while renaming merchant');
+    // If another request created the duplicate after our preflight check,
+    // recover by merging into the now-existing canonical row instead of failing.
+    const conflictingTransaction = await findConflictingTransaction(tx, source, description);
+    if (!conflictingTransaction) {
+      throw error;
+    }
+
+    const merged = await mergeIntoExistingTransaction(
+      tx,
+      source,
+      conflictingTransaction.id,
+      description,
+      inheritedCategory
+    );
+
+    return {
+      transaction: merged,
+      mergedIntoExisting: true,
+      deletedTransactionId: source.id,
+      attachedToExistingCategory: Boolean(merged.categoryId),
+    };
   }
 }
 
@@ -308,8 +339,10 @@ export async function PATCH(
     let updatedSimilarIds: string[] = [];
     let propagationSkipped = false;
     let propagationSkippedDueToSafety = false;
-    let skippedConflictCount = 0;
+    let mergedSimilarCount = 0;
     let failedSimilarCount = 0;
+    const mergedSimilarDeletedIds: string[] = [];
+    const mergedSimilarTransactions = new Map<string, DescriptionUpdateTransaction>();
 
     const sourceSignature = extractMerchantSignature(transaction.description);
     const sourceAmount = parseFloat(transaction.amount.toString());
@@ -360,7 +393,11 @@ export async function PATCH(
             ));
 
             if (result.mergedIntoExisting) {
-              skippedConflictCount += 1;
+              mergedSimilarCount += 1;
+              if (result.deletedTransactionId) {
+                mergedSimilarDeletedIds.push(result.deletedTransactionId);
+              }
+              mergedSimilarTransactions.set(result.transaction.id, result.transaction);
               continue;
             }
 
@@ -396,16 +433,16 @@ export async function PATCH(
       matchedSimilarCount,
       propagationSkipped,
       propagationSkippedDueToSafety,
-      skippedConflictCount,
+      skippedConflictCount: 0,
+      mergedSimilarCount,
+      mergedSimilarDeletedIds,
+      mergedSimilarTransactions: Array.from(mergedSimilarTransactions.values()),
       failedSimilarCount,
     });
   } catch (error) {
     console.error('Update description error:', error);
-    const message = error instanceof Error && error.message === 'Duplicate transaction detected while renaming merchant'
-      ? 'כבר קיימת עסקה בשם הזה. נסה שוב או בטל את ההחלה על עסקאות דומות'
-      : 'שגיאה בעדכון שם העסקה';
     return NextResponse.json(
-      { error: message },
+      { error: 'שגיאה בעדכון שם העסקה' },
       { status: 500 }
     );
   }

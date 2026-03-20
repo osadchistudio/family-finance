@@ -114,6 +114,16 @@ interface DescriptionEditTriggerProps {
   className?: string;
 }
 
+type DescriptionMergeTransactionPatch = {
+  id: string;
+  description?: string;
+  categoryId?: string | null;
+  category?: Transaction['category'] | null;
+  notes?: string | null;
+  isRecurring?: boolean;
+  isAutoCategorized?: boolean;
+};
+
 const AMOUNT_MATCH_EPSILON = 0.01;
 const RECURRING_SUGGESTION_AMOUNT_TOLERANCE = 10;
 const RECURRING_SUGGESTION_MIN_PERIODS = 3;
@@ -124,6 +134,56 @@ const RECURRING_SNOOZE_DEFAULT_DAYS = 30;
 const RECURRING_SNOOZE_LONG_DAYS = 90;
 const LIST_INITIAL_RENDER_LIMIT = 120;
 const LIST_RENDER_STEP = 120;
+
+function normalizeApiTransactionCategory(category: unknown): Transaction['category'] | null {
+  if (!category || typeof category !== 'object') {
+    return null;
+  }
+
+  const candidate = category as Record<string, unknown>;
+  if (typeof candidate.id !== 'string' || typeof candidate.name !== 'string') {
+    return null;
+  }
+
+  const type = candidate.type === 'EXPENSE' || candidate.type === 'INCOME' || candidate.type === 'TRANSFER'
+    ? candidate.type
+    : undefined;
+
+  return {
+    id: candidate.id,
+    name: candidate.name,
+    icon: typeof candidate.icon === 'string' && candidate.icon.trim() ? candidate.icon : '📁',
+    color: typeof candidate.color === 'string' && candidate.color.trim() ? candidate.color : '#6B7280',
+    type,
+  };
+}
+
+function normalizeDescriptionMergePatch(value: unknown): DescriptionMergeTransactionPatch | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.id !== 'string') {
+    return null;
+  }
+
+  return {
+    id: candidate.id,
+    description: typeof candidate.description === 'string' ? candidate.description : undefined,
+    categoryId: Object.prototype.hasOwnProperty.call(candidate, 'categoryId')
+      ? (typeof candidate.categoryId === 'string' ? candidate.categoryId : candidate.categoryId === null ? null : undefined)
+      : undefined,
+    category: Object.prototype.hasOwnProperty.call(candidate, 'category')
+      ? normalizeApiTransactionCategory(candidate.category)
+      : undefined,
+    notes: Object.prototype.hasOwnProperty.call(candidate, 'notes')
+      ? (typeof candidate.notes === 'string' ? candidate.notes : candidate.notes === null ? null : undefined)
+      : undefined,
+    isRecurring: typeof candidate.isRecurring === 'boolean' ? candidate.isRecurring : undefined,
+    isAutoCategorized: typeof candidate.isAutoCategorized === 'boolean' ? candidate.isAutoCategorized : undefined,
+  };
+}
 
 function DescriptionEditTrigger({
   value,
@@ -1390,34 +1450,58 @@ export function TransactionList({
       const deletedTransactionId = typeof result.deletedTransactionId === 'string'
         ? result.deletedTransactionId
         : null;
-      const mergedTransactionId = typeof result?.transaction?.id === 'string'
-        ? result.transaction.id
+      const mergedSimilarDeletedIds = new Set<string>(
+        Array.isArray(result.mergedSimilarDeletedIds)
+          ? result.mergedSimilarDeletedIds.filter((value: unknown): value is string => typeof value === 'string')
+          : []
+      );
+      const mergedTransactionPatches = new Map<string, DescriptionMergeTransactionPatch>();
+      const primaryPatch = normalizeDescriptionMergePatch(result?.transaction);
+      if (primaryPatch) {
+        mergedTransactionPatches.set(primaryPatch.id, primaryPatch);
+      }
+      if (Array.isArray(result.mergedSimilarTransactions)) {
+        for (const item of result.mergedSimilarTransactions) {
+          const patch = normalizeDescriptionMergePatch(item);
+          if (patch) {
+            mergedTransactionPatches.set(patch.id, patch);
+          }
+        }
+      }
+
+      const canonicalCategoryId = primaryPatch?.categoryId !== undefined
+        ? primaryPatch.categoryId
         : null;
-      const canonicalCategoryId = typeof result?.transaction?.categoryId === 'string'
-        ? result.transaction.categoryId
-        : null;
-      const canonicalCategory = result?.transaction?.category ?? null;
+      const canonicalCategory = primaryPatch?.category ?? null;
       const shouldApplyCanonicalCategory = Boolean(result.attachedToExistingCategory && canonicalCategoryId && canonicalCategory);
       const updatedIds = new Set<string>([
         editingDescriptionTransaction.id,
         ...(Array.isArray(result.updatedSimilarIds) ? result.updatedSimilarIds : []),
       ]);
+      const deletedIds = new Set<string>([
+        ...(deletedTransactionId ? [deletedTransactionId] : []),
+        ...mergedSimilarDeletedIds,
+      ]);
+      const mergedSimilarCount = Number(result.mergedSimilarCount || 0);
+      const updatedSimilarCount = Number(result.updatedSimilar || 0);
+      const failedSimilarCount = Number(result.failedSimilarCount || 0);
 
       setTransactions((prev) => prev
-        .filter((tx) => tx.id !== deletedTransactionId)
+        .filter((tx) => !deletedIds.has(tx.id))
         .map((tx) => {
-          if (mergedTransactionId && tx.id === mergedTransactionId) {
+          const mergedPatch = mergedTransactionPatches.get(tx.id);
+          if (mergedPatch) {
             return {
               ...tx,
-              description,
-              categoryId: result?.transaction?.categoryId ?? tx.categoryId,
-              category: result?.transaction?.category ?? tx.category,
-              notes: result?.transaction?.notes ?? tx.notes,
-              isRecurring: typeof result?.transaction?.isRecurring === 'boolean'
-                ? result.transaction.isRecurring
+              description: mergedPatch.description ?? description,
+              categoryId: mergedPatch.categoryId !== undefined ? mergedPatch.categoryId : tx.categoryId,
+              category: mergedPatch.category !== undefined ? mergedPatch.category : tx.category,
+              notes: mergedPatch.notes !== undefined ? mergedPatch.notes : tx.notes,
+              isRecurring: mergedPatch.isRecurring !== undefined
+                ? mergedPatch.isRecurring
                 : tx.isRecurring,
-              isAutoCategorized: typeof result?.transaction?.isAutoCategorized === 'boolean'
-                ? result.transaction.isAutoCategorized
+              isAutoCategorized: mergedPatch.isAutoCategorized !== undefined
+                ? mergedPatch.isAutoCategorized
                 : tx.isAutoCategorized,
             };
           }
@@ -1443,8 +1527,18 @@ export function TransactionList({
         const attachedCategoryMessage = result.attachedToExistingCategory
           ? 'העסקה חוברה לרשומה קיימת וקיבלה גם את הקטגוריה שכבר הייתה עליה'
           : 'העסקה חוברה לרשומה קיימת עם השם החדש כדי למנוע כפילות';
-        const similarMessage = Number(result.updatedSimilar || 0) > 0
-          ? `. עודכנו גם ${Number(result.updatedSimilar || 0)} תנועות דומות`
+        const similarParts: string[] = [];
+        if (updatedSimilarCount > 0) {
+          similarParts.push(`עודכנו גם ${updatedSimilarCount} תנועות דומות`);
+        }
+        if (mergedSimilarCount > 0) {
+          similarParts.push(`${mergedSimilarCount} תנועות דומות מוזגו לרשומות קיימות`);
+        }
+        if (failedSimilarCount > 0) {
+          similarParts.push(`${failedSimilarCount} תנועות דומות לא עודכנו`);
+        }
+        const similarMessage = similarParts.length > 0
+          ? `. ${similarParts.join('. ')}`
           : '';
         showToast(`${attachedCategoryMessage}${similarMessage}`, 'success');
       } else if (result.propagationSkippedDueToSafety) {
@@ -1454,21 +1548,25 @@ export function TransactionList({
         );
       } else if (result.propagationSkipped) {
         showToast('שם העסקה עודכן רק עבור התנועה שבחרת', 'success');
-      } else if (applyDescriptionToSimilar && Number(result.updatedSimilar || 0) > 0) {
-        const conflictSuffix = Number(result.skippedConflictCount || 0) > 0
-          ? `, ו-${Number(result.skippedConflictCount || 0)} דולגו בגלל כפילות`
-          : '';
+      } else if (applyDescriptionToSimilar && (updatedSimilarCount > 0 || mergedSimilarCount > 0)) {
+        const similarParts: string[] = [];
+        if (updatedSimilarCount > 0) {
+          similarParts.push(`עודכנו גם ${updatedSimilarCount} תנועות דומות`);
+        }
+        if (mergedSimilarCount > 0) {
+          similarParts.push(`${mergedSimilarCount} תנועות דומות מוזגו לרשומות קיימות`);
+        }
+        if (failedSimilarCount > 0) {
+          similarParts.push(`${failedSimilarCount} תנועות דומות לא עודכנו`);
+        }
+        showToast(`שם העסקה עודכן. ${similarParts.join('. ')}`, 'success');
+      } else if (failedSimilarCount > 0) {
         showToast(
-          `שם העסקה עודכן. עודכנו גם ${Number(result.updatedSimilar || 0)} תנועות דומות${conflictSuffix}`,
-          'success'
-        );
-      } else if (Number(result.failedSimilarCount || 0) > 0) {
-        showToast(
-          `שם העסקה עודכן, אבל ${Number(result.failedSimilarCount || 0)} תנועות דומות לא עודכנו`,
+          `שם העסקה עודכן, אבל ${failedSimilarCount} תנועות דומות לא עודכנו`,
           'info'
         );
-      } else if (Number(result.skippedConflictCount || 0) > 0) {
-        showToast(`שם העסקה עודכן. ${Number(result.skippedConflictCount || 0)} דולגו בגלל כפילות`, 'info');
+      } else if (mergedSimilarCount > 0) {
+        showToast(`שם העסקה עודכן. ${mergedSimilarCount} תנועות דומות מוזגו לרשומות קיימות`, 'success');
       } else {
         showToast('שם העסקה עודכן', 'success');
       }

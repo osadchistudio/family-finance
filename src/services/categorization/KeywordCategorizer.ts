@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Category, CategoryKeyword } from '@prisma/client';
-import { compactText, merchantSimilarityScore, normalizeText } from '@/lib/merchantSimilarity';
+import { buildMerchantFamilyKey, compactText, merchantSimilarityScore, normalizeText } from '@/lib/merchantSimilarity';
 
 export interface CategorizationResult {
   categoryId: string;
@@ -20,6 +20,9 @@ export interface HistoricalCategorizationCandidate {
 interface KeywordWithCategory extends CategoryKeyword {
   category: Category;
 }
+
+const MIN_HISTORY_SAMPLE_COUNT = 2;
+const MIN_HISTORY_DOMINANCE = 0.75;
 
 export class KeywordCategorizer {
   private keywords: KeywordWithCategory[] = [];
@@ -77,7 +80,7 @@ export class KeywordCategorizer {
         continue;
       }
 
-      const merchantKey = compactText(tx.merchantName || tx.description);
+      const merchantKey = buildMerchantFamilyKey(tx.merchantName || tx.description);
       if (!merchantKey) {
         continue;
       }
@@ -139,8 +142,8 @@ export class KeywordCategorizer {
 
       const dominanceRatio = totalCount > 0 ? topCategory.count / totalCount : 0;
       const isAmbiguous =
-        topCategory.count < 2 ||
-        dominanceRatio < 0.7 ||
+        topCategory.count < MIN_HISTORY_SAMPLE_COUNT ||
+        dominanceRatio < MIN_HISTORY_DOMINANCE ||
         (
           secondCategory &&
           topCategory.count === secondCategory.count

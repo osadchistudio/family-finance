@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { prisma } from '../src/lib/prisma';
-import { compactText, extractMerchantSignature, merchantSimilarityScore, normalizeText } from '../src/lib/merchantSimilarity';
+import { buildMerchantFamilyKey, merchantSimilarityScore, normalizeText } from '../src/lib/merchantSimilarity';
 
 type AuditTransaction = {
   id: string;
@@ -20,16 +20,6 @@ type MerchantGroup = {
   uncategorized: AuditTransaction[];
   categories: Map<string, { name: string; count: number }>;
 };
-
-function makeFamilyKey(tx: AuditTransaction): string | null {
-  const merchantBase = tx.merchantName || tx.description;
-  const signature = extractMerchantSignature(merchantBase);
-  const normalizedSignature = signature ? compactText(signature) : '';
-  if (normalizedSignature) return normalizedSignature;
-
-  const normalizedMerchant = compactText(merchantBase);
-  return normalizedMerchant || null;
-}
 
 function chooseDisplayName(group: MerchantGroup): string {
   const names = [group.displayName, ...group.sampleDescriptions]
@@ -83,7 +73,7 @@ async function main() {
   const groups = new Map<string, MerchantGroup>();
 
   for (const tx of auditTransactions) {
-    const familyKey = makeFamilyKey(tx);
+    const familyKey = buildMerchantFamilyKey(tx.merchantName || tx.description);
     if (!familyKey) continue;
 
     const existing = groups.get(familyKey) ?? {

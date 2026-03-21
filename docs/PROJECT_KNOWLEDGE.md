@@ -184,6 +184,28 @@ Out of scope:
 
 ## Consolidated change log (major milestones)
 
+### 2026-03-21 - Aligned learned merchant-history grouping with audit family keys
+Why:
+- The cross-history audit showed that the remaining risk is not missed uncategorized inheritance, but noisy merchant families around transfers and `BIT`-style descriptions
+- The production historical categorizer and the audit script were still grouping merchant history with different keys, which made it harder to trust that ambiguous families flagged by the audit were truly excluded from learned-history categorization
+
+What changed:
+- Added a shared merchant-family key helper so both production categorization and the audit script now derive merchant families the same way
+- Updated learned-history candidate grouping to use the shared merchant-family key instead of the full compacted description or merchant name
+- Tightened learned-history acceptance again so a merchant family now needs at least `75%` category dominance before it is eligible for automatic inheritance from history
+
+Files touched:
+- `/src/lib/merchantSimilarity.ts`
+- `/src/services/categorization/KeywordCategorizer.ts`
+- `/scripts/merchantCategorizationAudit.ts`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy required
+- No DB migration
+- No new environment variables
+- Historical auto-categorization is now more conservative for ambiguous transfer-like merchant families, and the audit output is now directly comparable to production grouping behavior
+
 ### 2026-03-20 - Hardened historical merchant-family categorization against noisy history
 Why:
 - The next priority after restoring production was to verify that merchant-history learning does not overfit on partial or noisy categorized history

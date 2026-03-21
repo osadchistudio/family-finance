@@ -70,6 +70,15 @@ export function extractMerchantSignature(description: string): string | null {
   return first;
 }
 
+export function buildMerchantFamilyKey(description: string): string | null {
+  const signature = extractMerchantSignature(description);
+  const normalizedSignature = signature ? compactText(signature) : '';
+  if (normalizedSignature) return normalizedSignature;
+
+  const normalizedMerchant = compactText(description);
+  return normalizedMerchant || null;
+}
+
 export function merchantSimilarityScore(sourceDescription: string, candidateDescription: string): number {
   const sourceNormalized = normalizeText(sourceDescription);
   const candidateNormalized = normalizeText(candidateDescription);

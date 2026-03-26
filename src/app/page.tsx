@@ -24,7 +24,8 @@ import {
 } from '@/components/dashboard/SmartNudgesCard';
 import dayjs from 'dayjs';
 import { Decimal } from 'decimal.js';
-import { buildPeriodLabels, buildPeriods, PeriodMode, RECENT_AVERAGE_PERIODS } from '@/lib/period-utils';
+import { formatCurrency } from '@/lib/formatters';
+import { buildPeriodLabels, buildPeriods, getPeriodKey, PeriodMode, RECENT_AVERAGE_PERIODS } from '@/lib/period-utils';
 import { getPeriodModeSetting } from '@/lib/system-settings';
 import { getVariableBudgetPlan } from '@/lib/variable-budget';
 import {
@@ -76,6 +77,12 @@ interface RecentTransactionItem {
     icon: string;
     color: string;
   } | null;
+}
+
+interface RecentPeriodIssueSnapshot {
+  periodKey: string;
+  missingSources: string[];
+  uncategorizedCount: number;
 }
 
 function buildFallbackAnalytics(periodMode: PeriodMode): DashboardAnalytics {
@@ -203,8 +210,10 @@ function buildFallbackSmartNudgesStatus(
       title: 'התמונה של התקופה עדיין חלקית',
       description: `חסרים ${currentPeriodStatus.missingSources.join(' ו־')} ולכן כדאי להשלים נתונים לפני שמסתמכים על המצב הנוכחי`,
       href: '/upload',
-      actionLabel: 'השלם העלאה',
+      actionLabel: getMissingSourcesActionLabel(currentPeriodStatus.missingSources),
       tone: 'warning',
+      priority: 'medium',
+      priorityLabel: 'כדאי השבוע',
     });
   }
 
@@ -214,8 +223,10 @@ function buildFallbackSmartNudgesStatus(
       title: 'בקצב הנוכחי צפויה חריגה במשתנות',
       description: 'קצב ההוצאות המשתנות גבוה מהמסגרת שתוכננה, ולכן כדאי לבצע התאמה לפני סוף התקופה',
       href: '/monthly-summary',
-      actionLabel: 'פתח תקציב',
+      actionLabel: 'פתח תקציב משתנות',
       tone: 'danger',
+      priority: 'high',
+      priorityLabel: 'דורש טיפול',
     });
   } else if (budgetStatus.paceStatus === 'warning') {
     nudges.push({
@@ -223,8 +234,10 @@ function buildFallbackSmartNudgesStatus(
       title: 'קצב המשתנות מתחיל לאותת על סיכון',
       description: 'התחזית עדיין ניתנת לבלימה, אבל כדאי לעקוב מקרוב אחרי הקצב בימים הקרובים',
       href: '/monthly-summary',
-      actionLabel: 'בדוק קצב',
+      actionLabel: 'בדוק תחזית תקציב',
       tone: 'warning',
+      priority: 'medium',
+      priorityLabel: 'כדאי השבוע',
     });
   }
 
@@ -252,6 +265,181 @@ function applySmartNudgeStates(
       (nudge) =>
         !nudge.snoozeKey || (!snoozed[nudge.snoozeKey] && !dismissed[nudge.snoozeKey])
     );
+}
+
+async function getRecentPeriodIssueSnapshots(
+  periodMode: PeriodMode,
+  options: {
+    expectsBankData: boolean;
+    expectsCreditData: boolean;
+  }
+): Promise<RecentPeriodIssueSnapshot[]> {
+  const periods = buildPeriods(periodMode, dayjs(), 3);
+  const firstPeriod = periods[0];
+  const lastPeriod = periods[periods.length - 1];
+
+  if (!firstPeriod || !lastPeriod) {
+    return [];
+  }
+
+  const transactions = await prisma.transaction.findMany({
+    where: {
+      isExcluded: false,
+      date: {
+        gte: firstPeriod.startDate.startOf('day').toDate(),
+        lte: lastPeriod.endDate.endOf('day').toDate(),
+      },
+    },
+    select: {
+      date: true,
+      amount: true,
+      categoryId: true,
+      account: {
+        select: {
+          institution: true,
+        },
+      },
+    },
+  });
+
+  const { periodAggregates } = aggregateTransactionsByPeriod(
+    transactions,
+    periods,
+    periodMode
+  );
+
+  const uncategorizedCountsByPeriod = new Map<string, number>();
+  for (const period of periods) {
+    uncategorizedCountsByPeriod.set(period.key, 0);
+  }
+
+  for (const transaction of transactions) {
+    if (transaction.categoryId) {
+      continue;
+    }
+
+    const periodKey = getPeriodKey(dayjs(transaction.date), periodMode);
+    uncategorizedCountsByPeriod.set(
+      periodKey,
+      (uncategorizedCountsByPeriod.get(periodKey) || 0) + 1
+    );
+  }
+
+  return periods.map((period) => {
+    const aggregate = periodAggregates[period.key];
+    const hasBankData = (aggregate?.bankCount || 0) > 0;
+    const hasCreditData = (aggregate?.creditCount || 0) > 0;
+    const missingSources: string[] = [];
+
+    if (options.expectsBankData && !hasBankData) {
+      missingSources.push('עו"ש');
+    }
+    if (options.expectsCreditData && !hasCreditData) {
+      missingSources.push('אשראי');
+    }
+
+    return {
+      periodKey: period.key,
+      missingSources,
+      uncategorizedCount: uncategorizedCountsByPeriod.get(period.key) || 0,
+    };
+  });
+}
+
+function countConsecutivePeriodsWithIssue<T>(
+  items: T[],
+  hasIssue: (item: T) => boolean
+): number {
+  let count = 0;
+
+  for (const item of [...items].reverse()) {
+    if (!hasIssue(item)) {
+      break;
+    }
+    count += 1;
+  }
+
+  return count;
+}
+
+function getRecurringIssuePriorityLabel(
+  consecutivePeriods: number,
+  fallbackLabel: string
+): string {
+  if (consecutivePeriods >= 3) {
+    return `חוזר ${consecutivePeriods} תקופות`;
+  }
+
+  if (consecutivePeriods === 2) {
+    return 'חוזר תקופה שנייה';
+  }
+
+  return fallbackLabel;
+}
+
+function getMissingSourcesActionLabel(missingSources: string[]): string {
+  if (missingSources.length === 1) {
+    return `העלה ${missingSources[0]}`;
+  }
+
+  return 'השלם נתונים';
+}
+
+function buildMissingSourcesDescription(
+  missingSources: string[],
+  consecutivePeriods: number
+): string {
+  const missingLabel = missingSources.join(' ו־');
+
+  if (consecutivePeriods >= 3) {
+    return `זו כבר תקופה ${consecutivePeriods} ברצף שחסרים ${missingLabel}. כדאי להשלים את המקורות עכשיו כדי לא להמשיך לעבוד עם תמונה חלקית.`;
+  }
+
+  if (consecutivePeriods === 2) {
+    return `גם בתקופה הקודמת חסרו ${missingLabel}, ועכשיו הם עדיין לא נקלטו. כדאי להשלים את ההעלאה לפני שמסתמכים על המצב הנוכחי.`;
+  }
+
+  return `חסרים ${missingLabel}, ולכן כדאי להשלים נתונים לפני שמסתמכים על המצב הנוכחי.`;
+}
+
+function buildUncategorizedDescription(
+  uncategorizedCount: number,
+  consecutivePeriods: number
+): string {
+  if (consecutivePeriods >= 3) {
+    return `יש כרגע ${uncategorizedCount} תנועות לא מסווגות, והנושא חוזר כבר ${consecutivePeriods} תקופות. כמה דקות של שיוך עכשיו יחזירו את הדשבורד וההתראות לתמונה נקייה יותר.`;
+  }
+
+  if (consecutivePeriods === 2) {
+    return `יש כרגע ${uncategorizedCount} תנועות לא מסווגות, וגם בתקופה הקודמת נשארו תנועות פתוחות. כדאי לסגור את זה עכשיו לפני שזה מצטבר שוב.`;
+  }
+
+  return `יש כרגע ${uncategorizedCount} תנועות לא מסווגות בתקופה הנוכחית, וזה עלול לטשטש את תמונת המצב.`;
+}
+
+function getStaleUploadsDescription(daysSinceLastSuccess: number | null): string {
+  if (daysSinceLastSuccess === null) {
+    return 'עדיין לא נקלטה העלאה מוצלחת במערכת. אם יש פעילות חדשה, זה זמן טוב להזין אותה כדי להתחיל לקבל תמונת מצב אמינה.';
+  }
+
+  if (daysSinceLastSuccess >= 14) {
+    return `העלאה מוצלחת אחרונה נקלטה לפני ${daysSinceLastSuccess} ימים. אם הייתה פעילות מאז, כדאי להשלים אותה עכשיו כדי לא להישאר מאחור.`;
+  }
+
+  return `ב־7 הימים האחרונים לא נקלטו קבצים חדשים. ההעלאה המוצלחת האחרונה הייתה לפני ${daysSinceLastSuccess} ימים, אז זה זמן טוב לבדוק אם חסר משהו.`;
+}
+
+function getBudgetOverrunDescription(status: VariableBudgetStatus): string {
+  const projectedOverrun = Math.max(0, -status.projectedRemaining);
+  if (projectedOverrun > 0) {
+    return `תחזית סוף התקופה מצביעה על חריגה צפויה של ${formatCurrency(projectedOverrun)}. כדאי לעצור ולבצע התאמה כבר עכשיו, לפני שהפער יגדל.`;
+  }
+
+  return 'תחזית סוף התקופה מראה חריגה צפויה מהתקציב המשתנה, ולכן כדאי לעצור ולבצע התאמה כבר עכשיו.';
+}
+
+function getBudgetWarningDescription(status: VariableBudgetStatus): string {
+  return `קצב המשתנות הנוכחי מוביל לתחזית של ${status.projectedUtilizationPercent.toFixed(0)}% שימוש מהתקציב. עדיין אפשר לבלום, אבל כדאי לבדוק את הקטגוריות המובילות כבר השבוע.`;
 }
 
 async function getAnalyticsData(periodMode: PeriodMode): Promise<DashboardAnalytics> {
@@ -529,7 +717,7 @@ async function getSmartNudgesStatus(
     const staleWindowStart = dayjs().subtract(7, 'day').startOf('day').toDate();
     const failedWindowStart = dayjs().subtract(14, 'day').startOf('day').toDate();
 
-    const [uncategorizedCount, failedUploadsCount, recentSuccessfulUploadsCount] = await Promise.all([
+    const [uncategorizedCount, failedUploadsCount, recentSuccessfulUploadsCount, latestSuccessfulUpload, recentPeriodIssues] = await Promise.all([
       prisma.transaction.count({
         where: {
           isExcluded: false,
@@ -556,40 +744,108 @@ async function getSmartNudgesStatus(
           },
         },
       }),
+      prisma.fileUpload.findFirst({
+        where: {
+          status: 'COMPLETED',
+        },
+        orderBy: {
+          processedAt: 'desc',
+        },
+        select: {
+          processedAt: true,
+        },
+      }),
+      getRecentPeriodIssueSnapshots(periodMode, {
+        expectsBankData: currentPeriodStatus.expectsBankData,
+        expectsCreditData: currentPeriodStatus.expectsCreditData,
+      }),
     ]);
 
     const nudges: SmartNudge[] = [];
+    const missingSourcesConsecutivePeriods = countConsecutivePeriodsWithIssue(
+      recentPeriodIssues,
+      (item) => item.missingSources.length > 0
+    );
+    const uncategorizedConsecutivePeriods = countConsecutivePeriodsWithIssue(
+      recentPeriodIssues,
+      (item) => item.uncategorizedCount > 0
+    );
+    const daysSinceLastSuccessfulUpload = latestSuccessfulUpload?.processedAt
+      ? Math.max(
+          0,
+          dayjs().startOf('day').diff(dayjs(latestSuccessfulUpload.processedAt).startOf('day'), 'day')
+        )
+      : null;
 
     if (currentPeriodStatus.isPartial && currentPeriodStatus.missingSources.length > 0) {
       nudges.push({
         key: 'missing-sources',
-        title: 'התמונה של התקופה עדיין חלקית',
-        description: `חסרים ${currentPeriodStatus.missingSources.join(' ו־')} ולכן כדאי להשלים נתונים לפני שמסתמכים על המצב הנוכחי`,
+        title:
+          missingSourcesConsecutivePeriods >= 2
+            ? 'חסרים נתונים שחוזרים על עצמם'
+            : 'התמונה של התקופה עדיין חלקית',
+        description: buildMissingSourcesDescription(
+          currentPeriodStatus.missingSources,
+          missingSourcesConsecutivePeriods
+        ),
         href: '/upload',
-        actionLabel: 'השלם העלאה',
-        tone: 'warning',
+        actionLabel: getMissingSourcesActionLabel(currentPeriodStatus.missingSources),
+        tone: missingSourcesConsecutivePeriods >= 3 ? 'danger' : 'warning',
+        priority: missingSourcesConsecutivePeriods >= 2 ? 'high' : 'medium',
+        priorityLabel: getRecurringIssuePriorityLabel(
+          missingSourcesConsecutivePeriods,
+          currentPeriodStatus.missingSources.length > 1 ? 'חסרים כמה מקורות' : 'חסר מקור פעיל'
+        ),
       });
     }
 
     if (recentSuccessfulUploadsCount === 0) {
       nudges.push({
         key: 'stale-uploads',
-        title: 'לא נקלטו העלאות חדשות לאחרונה',
-        description: 'ב־7 הימים האחרונים לא נקלטו קבצים חדשים. אם יש פעילות חדשה, זה זמן טוב לעדכן את המערכת',
+        title:
+          daysSinceLastSuccessfulUpload !== null && daysSinceLastSuccessfulUpload >= 14
+            ? 'לא נקלטו העלאות כבר יותר משבועיים'
+            : 'לא נקלטו העלאות חדשות לאחרונה',
+        description: getStaleUploadsDescription(daysSinceLastSuccessfulUpload),
         href: '/upload',
-        actionLabel: 'העלה עכשיו',
-        tone: 'info',
+        actionLabel: daysSinceLastSuccessfulUpload === null ? 'העלה קובץ ראשון' : 'בדוק אם חסרה העלאה',
+        tone:
+          daysSinceLastSuccessfulUpload !== null && daysSinceLastSuccessfulUpload >= 14
+            ? 'warning'
+            : 'info',
+        priority:
+          daysSinceLastSuccessfulUpload !== null && daysSinceLastSuccessfulUpload >= 14
+            ? 'high'
+            : 'medium',
+        priorityLabel:
+          daysSinceLastSuccessfulUpload !== null && daysSinceLastSuccessfulUpload >= 14
+            ? 'מתעכב כבר זמן מה'
+            : 'כדאי לרענן',
       });
     }
 
     if (uncategorizedCount > 0) {
+      const highUncategorizedPressure =
+        uncategorizedCount >= 10 || uncategorizedConsecutivePeriods >= 3;
+
       nudges.push({
         key: 'uncategorized',
-        title: 'יש תנועות שמחכות לשיוך',
-        description: `יש כרגע ${uncategorizedCount} תנועות לא מסווגות בתקופה הנוכחית, וזה עלול לטשטש את תמונת המצב`,
+        title:
+          uncategorizedConsecutivePeriods >= 2
+            ? 'לא מסווגות שממשיכות להצטבר'
+            : 'יש תנועות שמחכות לשיוך',
+        description: buildUncategorizedDescription(
+          uncategorizedCount,
+          uncategorizedConsecutivePeriods
+        ),
         href: '/transactions?categoryId=uncategorized',
-        actionLabel: 'פתח לא מסווגות',
-        tone: 'warning',
+        actionLabel: highUncategorizedPressure ? 'שייך תנועות עכשיו' : 'פתח לא מסווגות',
+        tone: highUncategorizedPressure ? 'danger' : 'warning',
+        priority: highUncategorizedPressure || uncategorizedConsecutivePeriods >= 2 ? 'high' : 'medium',
+        priorityLabel: getRecurringIssuePriorityLabel(
+          uncategorizedConsecutivePeriods,
+          `${uncategorizedCount} פתוחות`
+        ),
       });
     }
 
@@ -599,8 +855,10 @@ async function getSmartNudgesStatus(
         title: 'נמצאו העלאות שנכשלו לאחרונה',
         description: `ב־14 הימים האחרונים נמצאו ${failedUploadsCount} העלאות שנכשלו, ויכול להיות שחסרים נתונים שכדאי להשלים`,
         href: '/upload',
-        actionLabel: 'בדוק העלאות',
+        actionLabel: 'פתח העלאות שנכשלו',
         tone: 'danger',
+        priority: failedUploadsCount >= 2 ? 'high' : 'medium',
+        priorityLabel: failedUploadsCount >= 2 ? 'חוזר שוב' : 'דורש בדיקה',
       });
     }
 
@@ -608,19 +866,29 @@ async function getSmartNudgesStatus(
       nudges.push({
         key: 'budget-overrun',
         title: 'בקצב הנוכחי צפויה חריגה במשתנות',
-        description: 'תחזית סוף התקופה מראה חריגה צפויה מהתקציב המשתנה, ולכן כדאי לעצור ולבצע התאמה כבר עכשיו',
+        description: getBudgetOverrunDescription(budgetStatus),
         href: '/monthly-summary',
-        actionLabel: 'פתח תקציב',
+        actionLabel: 'פתח תקציב משתנות',
         tone: 'danger',
+        priority: 'high',
+        priorityLabel:
+          budgetStatus.overCount > 0
+            ? `${budgetStatus.overCount} קטגוריות כבר חורגות`
+            : 'דורש טיפול',
       });
     } else if (budgetStatus.paceStatus === 'warning') {
       nudges.push({
         key: 'budget-warning',
-        title: 'קצב המשתנות מתחיל לאותת על סיכון',
-        description: 'כרגע עדיין אפשר להישאר במסגרת, אבל הקצב כבר מתחיל לעלות מעל מה שתוכנן',
+        title: 'קצב המשתנות דורש בדיקה השבוע',
+        description: getBudgetWarningDescription(budgetStatus),
         href: '/monthly-summary',
-        actionLabel: 'בדוק קצב',
+        actionLabel: 'בדוק תחזית תקציב',
         tone: 'warning',
+        priority: 'medium',
+        priorityLabel:
+          budgetStatus.warningCount > 0
+            ? `${budgetStatus.warningCount} קטגוריות בסיכון`
+            : 'כדאי השבוע',
       });
     }
 

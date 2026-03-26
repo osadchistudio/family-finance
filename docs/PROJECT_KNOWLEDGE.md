@@ -125,6 +125,8 @@ Out of scope:
 - Partial data periods are excluded from average basis and indicated
 - Fault tolerance added so partial datasource failures do not crash full dashboard
 - Charts render left-to-right for timeline clarity
+- Smart Nudges now escalate repeated issues across recent periods instead of treating every alert as isolated
+- Smart Nudges now use more action-oriented wording and action labels for missing sources, stale uploads, uncategorized transactions, failed uploads, and variable-budget pace risk
 
 ### Monthly summary
 - Supports calendar mode (1-1) and billing cycle mode (10-10) from global settings
@@ -188,6 +190,27 @@ Out of scope:
   - use `שלח בדיקה עכשיו` in `/settings`
 
 ## Consolidated change log (major milestones)
+
+### 2026-03-26 - Escalated recurring Smart Nudges and made actions more explicit
+Why:
+- The next Smart Nudges phase was to stop treating every issue as a one-off and instead surface when the same problem keeps coming back across recent periods
+- Existing nudges were helpful, but some of them still sounded observational instead of telling the user what to do next
+
+What changed:
+- Added recent-period Smart Nudge issue tracking for missing sources and uncategorized transactions so the dashboard can detect when the same issue repeats across consecutive periods
+- Upgraded Smart Nudges to raise priority and tone when missing-source or uncategorized problems recur, including explicit recurrence labels such as repeated-period warnings
+- Rewrote action labels and descriptions to be more operational, for example telling the user to upload a specific missing source, open failed uploads, or review the variable-budget forecast directly
+- Added stronger stale-upload messaging based on how many days have passed since the last successful upload
+
+Files touched:
+- `/src/app/page.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy required
+- No DB migration
+- No new environment variables
+- Smart Nudges now do one additional recent-period transaction pass and one latest-successful-upload lookup so recurring operational issues can be escalated more clearly in the dashboard
 
 ### 2026-03-26 - Added Telegram action-surface commands for current-period monitoring
 Why:

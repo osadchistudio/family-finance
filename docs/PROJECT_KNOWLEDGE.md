@@ -102,6 +102,11 @@ Out of scope:
 - Production access is restricted by `TELEGRAM_ALLOWED_CHAT_IDS`
 - If `TELEGRAM_ALLOWED_CHAT_IDS` is missing in production, the bot rejects all chats and returns the current `chat_id` for configuration
 - In non-production, missing `TELEGRAM_ALLOWED_CHAT_IDS` falls back to open access for local testing
+- Telegram action-surface commands now include:
+  - `/month` for the current-period snapshot
+  - `/missing` for current-period missing sources
+  - `/uncategorized` for current-period uncategorized transactions
+  - `/budget` for variable-budget status
 - Upload replies now include quick links to `העלאות`, `תנועות`, and `לא מסווגות` when relevant
 - Upload replies now show up to 3 example errors instead of only an error count
 - Telegram upload duplicate conflicts from the DB unique key are treated as duplicates, not surfaced as import errors
@@ -183,6 +188,27 @@ Out of scope:
   - use `שלח בדיקה עכשיו` in `/settings`
 
 ## Consolidated change log (major milestones)
+
+### 2026-03-26 - Added Telegram action-surface commands for current-period monitoring
+Why:
+- The next planned Telegram step was to let the user operate common read-only flows from mobile without opening the site
+- Current-month status, missing data, uncategorized transactions, and variable-budget pressure already existed in the app, but not as fast Telegram commands
+
+What changed:
+- Added a shared current-period insights helper that calculates the active period snapshot, uncategorized preview, recent upload count, and variable-budget status for Telegram use
+- Extended the Telegram bot with `/month`, `/missing`, `/uncategorized`, and `/budget` commands
+- Updated `/start` and `/help` so the bot now advertises the new action-surface commands and returns deep links into the relevant screens
+
+Files touched:
+- `/src/lib/current-period-insights.ts`
+- `/src/services/telegram/TelegramBotService.ts`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy required
+- No DB migration
+- No new environment variables
+- Telegram users can now inspect the current period, missing sources, uncategorized transactions, and variable-budget pressure directly from the bot
 
 ### 2026-03-21 - Aligned learned merchant-history grouping with audit family keys
 Why:

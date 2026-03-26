@@ -2,6 +2,8 @@ import { Telegraf, Context, Markup } from 'telegraf';
 import { Message, Update } from 'telegraf/types';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { formatCurrency, formatDateShort } from '@/lib/formatters';
+import { getCurrentPeriodInsights, type CurrentPeriodBudgetStatus, type CurrentPeriodInsights } from '@/lib/current-period-insights';
 import { FileParserService } from '@/services/parsers/FileParserService';
 import { KeywordCategorizer } from '@/services/categorization/KeywordCategorizer';
 import { RecurringKeywordMatcher } from '@/services/categorization/RecurringKeywordMatcher';
@@ -66,6 +68,10 @@ export class TelegramBotService {
         '📎 שלח לי קובץ (CSV, Excel או PDF) של תנועות בנק או כרטיס אשראי ואני אעלה אותו למערכת.\n\n' +
         '📊 פקודות זמינות:\n' +
         '/status - סיכום העלאות אחרונות\n' +
+        '/month - תמונת מצב לתקופה הנוכחית\n' +
+        '/missing - בדיקת מקורות חסרים\n' +
+        '/uncategorized - תנועות לא מסווגות\n' +
+        '/budget - מצב תקציב משתנות\n' +
         '/help - עזרה'
       );
     });
@@ -77,6 +83,12 @@ export class TelegramBotService {
         '1. שלח קובץ CSV, Excel או PDF\n' +
         '2. המערכת תזהה אוטומטית את המוסד הפיננסי\n' +
         '3. תקבל סיכום של התנועות שיובאו\n\n' +
+        '📲 פקודות פעולה מהירה:\n' +
+        '• /month - מצב התקופה הנוכחית\n' +
+        '• /missing - אילו מקורות עדיין חסרים\n' +
+        '• /uncategorized - כמה תנועות עדיין לא משויכות\n' +
+        '• /budget - מצב תקציב המשתנות\n' +
+        '• /status - העלאות אחרונות\n\n' +
         '🏦 מוסדות נתמכים:\n' +
         '• בנק הפועלים\n' +
         '• בנק לאומי\n' +
@@ -123,6 +135,22 @@ export class TelegramBotService {
       } catch {
         await ctx.reply('❌ שגיאה בקבלת סטטוס. נסה שוב מאוחר יותר.');
       }
+    });
+
+    this.bot.command('month', async (ctx) => {
+      await this.handleMonthCommand(ctx);
+    });
+
+    this.bot.command('missing', async (ctx) => {
+      await this.handleMissingCommand(ctx);
+    });
+
+    this.bot.command('uncategorized', async (ctx) => {
+      await this.handleUncategorizedCommand(ctx);
+    });
+
+    this.bot.command('budget', async (ctx) => {
+      await this.handleBudgetCommand(ctx);
     });
 
     // Handle document uploads
@@ -533,6 +561,318 @@ export class TelegramBotService {
     }
 
     return sentCount;
+  }
+
+  private async handleMonthCommand(ctx: Context): Promise<void> {
+    try {
+      const snapshot = await getCurrentPeriodInsights();
+      const lines = [
+        '📅 מצב התקופה הנוכחית',
+        '',
+        `תקופה: ${snapshot.periodLabel}`,
+        snapshot.dateRangeLabel,
+        `עברו ${snapshot.elapsedDays} מתוך ${snapshot.totalDays} ימים · נותרו ${snapshot.remainingDays}`,
+        `תנועות שנקלטו: ${snapshot.transactionCount}`,
+        '',
+        `💚 הכנסות: ${formatCurrency(snapshot.income)}`,
+        `💸 הוצאות: ${formatCurrency(snapshot.expense)}`,
+        `⚖️ מאזן: ${this.formatSignedCurrency(snapshot.balance)}`,
+        `📉 קצב הוצאה יומי: ${formatCurrency(snapshot.averageDailyExpense)}`,
+        `🗓️ מסגרת יומית נותרת: ${this.formatOptionalSignedCurrency(snapshot.remainingDailyBudget, 'התקופה הסתיימה')}`,
+      ];
+
+      if (!snapshot.hasAnyData) {
+        lines.push('');
+        lines.push('עדיין לא נקלטו תנועות לתקופה הזו.');
+      }
+
+      if (snapshot.missingSources.length > 0) {
+        lines.push('');
+        lines.push(`⚠️ חסרים כרגע: ${snapshot.missingSources.join(' ו־')}`);
+      }
+
+      if (snapshot.uncategorizedCount > 0) {
+        lines.push(`🏷️ לא מסווגות: ${snapshot.uncategorizedCount}`);
+      }
+
+      lines.push('');
+      lines.push(`🎯 תקציב משתנות: ${this.getBudgetSummaryLine(snapshot.budgetStatus)}`);
+
+      await ctx.reply(
+        lines.filter(Boolean).join('\n'),
+        this.buildMonthKeyboard(snapshot)
+      );
+    } catch (error) {
+      console.error('Telegram /month command error:', error);
+      await ctx.reply('❌ לא הצלחתי לטעון את תמונת המצב של התקופה הנוכחית.');
+    }
+  }
+
+  private async handleMissingCommand(ctx: Context): Promise<void> {
+    try {
+      const snapshot = await getCurrentPeriodInsights();
+
+      if (snapshot.missingSources.length === 0) {
+        const lines = [
+          '✅ כרגע לא חסרים מקורות לתקופה הנוכחית',
+          '',
+          `תקופה: ${snapshot.periodLabel}`,
+          snapshot.dateRangeLabel,
+          `העלאות ב-7 הימים האחרונים: ${snapshot.recentUploadsLast7Days}`,
+          `תנועות שנקלטו: ${snapshot.transactionCount}`,
+        ];
+
+        if (!snapshot.hasAnyData) {
+          lines.push('');
+          lines.push('עדיין לא נקלטו תנועות לתקופה הזו, אבל גם לא זוהה מקור חסר לפי ההיסטוריה הקיימת.');
+        }
+
+        await ctx.reply(
+          lines.join('\n'),
+          this.buildMissingKeyboard(snapshot)
+        );
+        return;
+      }
+
+      const lines = [
+        '⚠️ התמונה של התקופה עדיין חלקית',
+        '',
+        `תקופה: ${snapshot.periodLabel}`,
+        snapshot.dateRangeLabel,
+        `חסרים כרגע: ${snapshot.missingSources.join(' ו־')}`,
+        `העלאות ב-7 הימים האחרונים: ${snapshot.recentUploadsLast7Days}`,
+        `תנועות שנקלטו עד כה: ${snapshot.transactionCount}`,
+        '',
+        'כדאי להשלים העלאה לפני שמסתמכים על התמונה הנוכחית.',
+      ];
+
+      await ctx.reply(
+        lines.join('\n'),
+        this.buildMissingKeyboard(snapshot)
+      );
+    } catch (error) {
+      console.error('Telegram /missing command error:', error);
+      await ctx.reply('❌ לא הצלחתי לבדוק אילו מקורות חסרים כרגע.');
+    }
+  }
+
+  private async handleUncategorizedCommand(ctx: Context): Promise<void> {
+    try {
+      const snapshot = await getCurrentPeriodInsights();
+
+      if (snapshot.uncategorizedCount === 0) {
+        await ctx.reply(
+          [
+            '✅ אין כרגע תנועות לא מסווגות בתקופה הנוכחית',
+            '',
+            `תקופה: ${snapshot.periodLabel}`,
+            snapshot.dateRangeLabel,
+          ].join('\n'),
+          this.buildUncategorizedKeyboard(snapshot)
+        );
+        return;
+      }
+
+      const lines = [
+        '🏷️ תנועות לא מסווגות',
+        '',
+        `תקופה: ${snapshot.periodLabel}`,
+        snapshot.dateRangeLabel,
+        `כמות כרגע: ${snapshot.uncategorizedCount}`,
+      ];
+
+      if (snapshot.uncategorizedPreview.length > 0) {
+        lines.push('');
+        lines.push('אחרונות לבדיקה:');
+        snapshot.uncategorizedPreview.forEach((tx) => {
+          lines.push(`• ${formatDateShort(tx.date)} · ${tx.description} · ${this.formatSignedCurrency(tx.amount)}`);
+        });
+      }
+
+      if (snapshot.uncategorizedCount > snapshot.uncategorizedPreview.length) {
+        lines.push(`ועוד ${snapshot.uncategorizedCount - snapshot.uncategorizedPreview.length} תנועות לא מסווגות`);
+      }
+
+      await ctx.reply(
+        lines.join('\n'),
+        this.buildUncategorizedKeyboard(snapshot)
+      );
+    } catch (error) {
+      console.error('Telegram /uncategorized command error:', error);
+      await ctx.reply('❌ לא הצלחתי לטעון את רשימת הלא מסווגות.');
+    }
+  }
+
+  private async handleBudgetCommand(ctx: Context): Promise<void> {
+    try {
+      const snapshot = await getCurrentPeriodInsights();
+      const budgetStatus = snapshot.budgetStatus;
+
+      if (!budgetStatus.hasPlan) {
+        await ctx.reply(
+          [
+            '🎯 עדיין לא הוגדר תקציב משתנות לתקופה הזו',
+            '',
+            `תקופה: ${snapshot.periodLabel}`,
+            'כדי לקבל תחזית קצב והתראות חריגה, כדאי להגדיר תקציב במסך הסיכום החודשי.',
+          ].join('\n'),
+          this.buildBudgetKeyboard(snapshot)
+        );
+        return;
+      }
+
+      const lines = [
+        '🎯 מצב תקציב משתנות',
+        '',
+        `תקופה: ${budgetStatus.periodLabel}`,
+        `תקציב: ${formatCurrency(budgetStatus.plannedTotal)}`,
+        `הוצאות בפועל: ${formatCurrency(budgetStatus.actualTotal)}`,
+        `מרווח נותר: ${this.formatRemainingCurrency(budgetStatus.remainingTotal)}`,
+        `ניצול עד כה: ${budgetStatus.utilizationPercent.toFixed(0)}%`,
+        '',
+        `תחזית סוף תקופה: ${formatCurrency(budgetStatus.projectedTotal)}`,
+        `פער צפוי מול התקציב: ${this.formatRemainingCurrency(budgetStatus.projectedRemaining)}`,
+        `קצב נוכחי: ${this.getBudgetPaceLabel(budgetStatus)}`,
+        `מסגרת יומית נותרת: ${this.formatOptionalSignedCurrency(budgetStatus.plannedDailyAllowanceRemaining, 'התקופה הסתיימה')}`,
+      ];
+
+      if (budgetStatus.alerts.length > 0) {
+        lines.push('');
+        lines.push('קטגוריות בולטות:');
+        budgetStatus.alerts.slice(0, 3).forEach((alert) => {
+          lines.push(
+            `• ${alert.categoryIcon} ${alert.categoryName} · ${formatCurrency(alert.actual)} / ${formatCurrency(alert.planned)} · ${alert.utilizationPercent.toFixed(0)}%`
+          );
+        });
+      } else {
+        lines.push('');
+        lines.push('כרגע אין קטגוריות שחורגות או מתקרבות לתקרה.');
+      }
+
+      await ctx.reply(
+        lines.join('\n'),
+        this.buildBudgetKeyboard(snapshot)
+      );
+    } catch (error) {
+      console.error('Telegram /budget command error:', error);
+      await ctx.reply('❌ לא הצלחתי לטעון את מצב תקציב המשתנות.');
+    }
+  }
+
+  private formatSignedCurrency(amount: number): string {
+    if (!Number.isFinite(amount)) {
+      return formatCurrency(0);
+    }
+
+    if (amount < 0) {
+      return `-${formatCurrency(Math.abs(amount))}`;
+    }
+
+    return formatCurrency(amount);
+  }
+
+  private formatOptionalSignedCurrency(value: number | null, fallbackText: string): string {
+    if (value === null || !Number.isFinite(value)) {
+      return fallbackText;
+    }
+
+    return this.formatSignedCurrency(value);
+  }
+
+  private formatRemainingCurrency(amount: number): string {
+    if (!Number.isFinite(amount)) {
+      return formatCurrency(0);
+    }
+
+    return amount >= 0
+      ? formatCurrency(amount)
+      : `-${formatCurrency(Math.abs(amount))}`;
+  }
+
+  private getBudgetPaceLabel(status: CurrentPeriodBudgetStatus): string {
+    if (status.paceStatus === 'over') {
+      return 'צפויה חריגה';
+    }
+
+    if (status.paceStatus === 'warning') {
+      return 'התקציב בסיכון';
+    }
+
+    return 'על המסלול';
+  }
+
+  private getBudgetSummaryLine(status: CurrentPeriodBudgetStatus): string {
+    if (!status.hasPlan) {
+      return 'עדיין לא הוגדר';
+    }
+
+    return `${this.getBudgetPaceLabel(status)} · ${status.projectedUtilizationPercent.toFixed(0)}% שימוש צפוי`;
+  }
+
+  private buildMonthKeyboard(snapshot: CurrentPeriodInsights) {
+    const baseUrl = this.getAppBaseUrl();
+    const rows = [];
+
+    if (snapshot.uncategorizedCount > 0) {
+      rows.push([
+        Markup.button.url('פתח לא מסווגות', `${baseUrl}/transactions?categoryId=uncategorized`),
+      ]);
+    }
+
+    if (snapshot.missingSources.length > 0) {
+      rows.push([
+        Markup.button.url('פתח העלאות', `${baseUrl}/upload`),
+      ]);
+    }
+
+    rows.push([
+      Markup.button.url('פתח לוח בקרה', `${baseUrl}/`),
+      Markup.button.url('פתח סיכום חודשי', `${baseUrl}/monthly-summary`),
+    ]);
+
+    return Markup.inlineKeyboard(rows);
+  }
+
+  private buildMissingKeyboard(snapshot: CurrentPeriodInsights) {
+    const baseUrl = this.getAppBaseUrl();
+    const rows = [
+      [Markup.button.url('פתח העלאות', `${baseUrl}/upload`)],
+      [Markup.button.url('פתח לוח בקרה', `${baseUrl}/`)],
+    ];
+
+    if (snapshot.uncategorizedCount > 0) {
+      rows.splice(1, 0, [
+        Markup.button.url('פתח לא מסווגות', `${baseUrl}/transactions?categoryId=uncategorized`),
+      ]);
+    }
+
+    return Markup.inlineKeyboard(rows);
+  }
+
+  private buildUncategorizedKeyboard(snapshot: CurrentPeriodInsights) {
+    const baseUrl = this.getAppBaseUrl();
+    const rows = [];
+
+    if (snapshot.uncategorizedCount > 0) {
+      rows.push([
+        Markup.button.url('פתח לא מסווגות', `${baseUrl}/transactions?categoryId=uncategorized`),
+      ]);
+    }
+
+    rows.push([
+      Markup.button.url('פתח תנועות', `${baseUrl}/transactions`),
+      Markup.button.url('פתח לוח בקרה', `${baseUrl}/`),
+    ]);
+
+    return Markup.inlineKeyboard(rows);
+  }
+
+  private buildBudgetKeyboard(_snapshot: CurrentPeriodInsights) {
+    const baseUrl = this.getAppBaseUrl();
+    return Markup.inlineKeyboard([
+      [Markup.button.url('פתח תקציב משתנות', `${baseUrl}/monthly-summary`)],
+      [Markup.button.url('פתח לוח בקרה', `${baseUrl}/`)],
+    ]);
   }
 
   private parseAllowedChatIds(rawValue?: string): Set<string> {

@@ -164,6 +164,8 @@ Out of scope:
 ## Planning documents
 - Product roadmap and next recommended release batches:
   - `/docs/ROADMAP.md`
+- Receipt-focused mobile app planning:
+  - `/docs/RECEIPTS_MOBILE_APP_PLAN.md`
 
 ## Operational runbook
 

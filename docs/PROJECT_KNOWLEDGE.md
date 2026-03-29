@@ -120,6 +120,7 @@ Out of scope:
   - secure cron trigger via `/api/telegram/reminders/run` guarded by `TELEGRAM_REMINDER_SECRET`
 - Telegram reminders now send the active Smart Nudges themselves, with action buttons that match the dashboard links
 - High-priority Smart Nudges such as budget overruns or repeated failed uploads can now trigger Telegram reminders even outside the older reminder checkbox set
+- Telegram Smart Nudge reminder buttons now support `השהה לשבוע` and `סגור לתקופה` directly from the Telegram message, using the same shared nudge-state storage as the dashboard
 
 ### Dashboard
 - Presents generalized monthly picture (averages, not just current month totals)
@@ -192,6 +193,33 @@ Out of scope:
   - use `שלח בדיקה עכשיו` in `/settings`
 
 ## Consolidated change log (major milestones)
+
+### 2026-03-29 - Added Telegram snooze and dismiss actions for Smart Nudges
+Why:
+- Once Smart Nudges started reaching Telegram, the next friction point was that they were still read-only there
+- The dashboard already had snooze and dismiss behavior, so Telegram needed the same loop-closing actions instead of forcing the user back into the web UI
+
+What changed:
+- Added shared Smart Nudge state persistence helpers so the dashboard API and Telegram bot both update the same snoozed and dismissed state
+- Extended Telegram reminder keyboards with `השהה לשבוע` and `סגור לתקופה` callback buttons for active Smart Nudges
+- Added Telegram callback handling so Smart Nudges can now be snoozed or dismissed directly from the bot without opening the site
+- Updated `/settings` copy to explain that Telegram reminders now support in-message handling actions
+
+Files touched:
+- `/src/lib/smart-nudge-snooze.ts`
+- `/src/lib/telegram-smart-nudge-actions.ts`
+- `/src/lib/telegram-reminders.ts`
+- `/src/services/telegram/TelegramBotService.ts`
+- `/src/app/api/dashboard/smart-nudges-snooze/route.ts`
+- `/src/app/settings/page.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy required
+- No DB migration
+- No new environment variables
+- Telegram Smart Nudge callback actions now write into the same persisted snooze/dismiss state that the dashboard reads, so snoozed or dismissed reminders stay suppressed across both surfaces
+- Reminder messages can now trigger Telegraf callback handling in addition to normal deep-link navigation
 
 ### 2026-03-29 - Connected Smart Nudges to Telegram reminders
 Why:

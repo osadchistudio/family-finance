@@ -5,6 +5,7 @@ import { getCurrentPeriodInsights } from '@/lib/current-period-insights';
 import { getSmartNudgesStatus } from '@/lib/smart-nudges';
 import { getTelegramReminderLastSentSlot, getTelegramReminderSettings, saveTelegramReminderLastSentSlot } from '@/lib/system-settings';
 import { APP_TIMEZONE, formatReminderHour, getWeekdayLabel, TelegramReminderSettings } from '@/lib/telegram-reminder-config';
+import { buildTelegramSmartNudgeCallbackData } from '@/lib/telegram-smart-nudge-actions';
 import type { SmartNudge } from '@/lib/smart-nudge-types';
 
 const WEEKDAY_INDEX_BY_SHORT_NAME: Record<string, number> = {
@@ -224,9 +225,15 @@ function buildReminderKeyboard(snapshot: ReminderSnapshot) {
     }
 
     rows.push([Markup.button.url(nudge.actionLabel, `${baseUrl}${nudge.href}`)]);
+    if (nudge.snoozeKey) {
+      rows.push([
+        Markup.button.callback('השהה לשבוע', buildTelegramSmartNudgeCallbackData('snooze', nudge.snoozeKey)),
+        Markup.button.callback('סגור לתקופה', buildTelegramSmartNudgeCallbackData('dismiss', nudge.snoozeKey)),
+      ]);
+    }
     seenHrefs.add(nudge.href);
 
-    if (rows.length >= 3) {
+    if (seenHrefs.size >= 2) {
       break;
     }
   }

@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { formatCurrency, formatDateShort } from '@/lib/formatters';
 import { getCurrentPeriodInsights, type CurrentPeriodBudgetStatus, type CurrentPeriodInsights } from '@/lib/current-period-insights';
+import { parseSmartNudgeKey, updateSmartNudgeState } from '@/lib/smart-nudge-snooze';
+import { parseTelegramSmartNudgeCallbackData } from '@/lib/telegram-smart-nudge-actions';
 import { FileParserService } from '@/services/parsers/FileParserService';
 import { KeywordCategorizer } from '@/services/categorization/KeywordCategorizer';
 import { RecurringKeywordMatcher } from '@/services/categorization/RecurringKeywordMatcher';
@@ -151,6 +153,10 @@ export class TelegramBotService {
 
     this.bot.command('budget', async (ctx) => {
       await this.handleBudgetCommand(ctx);
+    });
+
+    this.bot.action(/^sn:(s|d):(.+)$/, async (ctx) => {
+      await this.handleSmartNudgeAction(ctx);
     });
 
     // Handle document uploads
@@ -756,6 +762,44 @@ export class TelegramBotService {
     } catch (error) {
       console.error('Telegram /budget command error:', error);
       await ctx.reply('❌ לא הצלחתי לטעון את מצב תקציב המשתנות.');
+    }
+  }
+
+  private async handleSmartNudgeAction(ctx: Context): Promise<void> {
+    try {
+      const callbackData =
+        'callbackQuery' in ctx &&
+        ctx.callbackQuery &&
+        'data' in ctx.callbackQuery
+          ? ctx.callbackQuery.data
+          : null;
+      const parsed = parseTelegramSmartNudgeCallbackData(callbackData);
+
+      if (!parsed) {
+        await ctx.answerCbQuery('לא הצלחתי לזהות את הפעולה הזו');
+        return;
+      }
+
+      const nudgeKey = parseSmartNudgeKey(parsed.nudgeKey);
+      if (!nudgeKey) {
+        await ctx.answerCbQuery('המפתח של ההתראה לא תקין');
+        return;
+      }
+
+      await updateSmartNudgeState({
+        nudgeKey,
+        action: parsed.action,
+        snoozeDays: parsed.action === 'snooze' ? 7 : undefined,
+      });
+
+      await ctx.answerCbQuery(
+        parsed.action === 'snooze'
+          ? 'ההתראה הושהתה לשבוע'
+          : 'ההתראה נסגרה לתקופה'
+      );
+    } catch (error) {
+      console.error('Telegram smart nudge action error:', error);
+      await ctx.answerCbQuery('לא הצלחתי לעדכן את ההתראה כרגע');
     }
   }
 

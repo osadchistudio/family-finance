@@ -434,7 +434,7 @@ export default function SettingsPage() {
           <div>
             <h2 className="text-lg font-semibold text-gray-900">תזכורות טלגרם</h2>
             <p className="text-sm text-gray-500">
-              תזכורת שבועית עם Smart Nudges פעילים, כולל בעיות דאטה, לא מסווגות וחריגות בולטות
+              תזכורת שבועית עם Smart Nudges פעילים, כולל כפתורי השהיה וסגירה ישירות מתוך הטלגרם
             </p>
           </div>
         </div>

@@ -11,6 +11,19 @@ const MAX_KEY_LENGTH = 240;
 
 export type SnoozedSmartNudgeMap = Record<string, string>;
 export type DismissedSmartNudgeMap = Record<string, string>;
+type SmartNudgeMap = SnoozedSmartNudgeMap | DismissedSmartNudgeMap;
+export type SmartNudgeStateAction = 'clear' | 'dismiss' | 'snooze';
+
+export interface SmartNudgeStateUpdateResult {
+  success: true;
+  nudgeKey: string;
+  action: SmartNudgeStateAction;
+  snoozeDays?: number;
+  expiresAt: string | null;
+  dismissedAt: string | null;
+  snoozed: SnoozedSmartNudgeMap;
+  dismissed: DismissedSmartNudgeMap;
+}
 
 export function buildSmartNudgeSnoozeKey(periodKey: string, nudgeKey: string): string {
   return `${periodKey}:${nudgeKey}`;
@@ -78,13 +91,54 @@ export function clampSmartNudgeSnoozeDays(value: unknown): number {
   return Math.min(MAX_SNOOZE_DAYS, Math.max(MIN_SNOOZE_DAYS, Math.round(parsed)));
 }
 
+async function readStoredMap(
+  key: string,
+  normalize: (value: string | null | undefined) => SmartNudgeMap
+) {
+  const setting = await prisma.setting.findUnique({
+    where: { key },
+  });
+
+  const normalized = normalize(setting?.value);
+  return {
+    setting,
+    normalized,
+  };
+}
+
+export async function readSmartNudgeSnoozedMap() {
+  return readStoredMap(SMART_NUDGE_SNOOZE_SETTING_KEY, normalizeSmartNudgeSnoozes);
+}
+
+export async function readSmartNudgeDismissedMap() {
+  return readStoredMap(SMART_NUDGE_DISMISSED_SETTING_KEY, normalizeSmartNudgeDismissals);
+}
+
+async function persistStoredMap(key: string, map: SmartNudgeMap) {
+  await prisma.setting.upsert({
+    where: { key },
+    create: {
+      key,
+      value: JSON.stringify(map),
+    },
+    update: {
+      value: JSON.stringify(map),
+    },
+  });
+}
+
+export async function persistSmartNudgeSnoozedMap(map: SnoozedSmartNudgeMap) {
+  await persistStoredMap(SMART_NUDGE_SNOOZE_SETTING_KEY, map);
+}
+
+export async function persistSmartNudgeDismissedMap(map: DismissedSmartNudgeMap) {
+  await persistStoredMap(SMART_NUDGE_DISMISSED_SETTING_KEY, map);
+}
+
 export async function getSmartNudgeSnoozes(): Promise<SnoozedSmartNudgeMap> {
   try {
-    const setting = await prisma.setting.findUnique({
-      where: { key: SMART_NUDGE_SNOOZE_SETTING_KEY },
-    });
-
-    return normalizeSmartNudgeSnoozes(setting?.value);
+    const { normalized } = await readSmartNudgeSnoozedMap();
+    return normalized;
   } catch {
     return {};
   }
@@ -92,12 +146,88 @@ export async function getSmartNudgeSnoozes(): Promise<SnoozedSmartNudgeMap> {
 
 export async function getSmartNudgeDismissals(): Promise<DismissedSmartNudgeMap> {
   try {
-    const setting = await prisma.setting.findUnique({
-      where: { key: SMART_NUDGE_DISMISSED_SETTING_KEY },
-    });
-
-    return normalizeSmartNudgeDismissals(setting?.value);
+    const { normalized } = await readSmartNudgeDismissedMap();
+    return normalized;
   } catch {
     return {};
   }
+}
+
+export async function updateSmartNudgeState({
+  nudgeKey,
+  action,
+  snoozeDays,
+}: {
+  nudgeKey: string;
+  action: SmartNudgeStateAction;
+  snoozeDays?: number;
+}): Promise<SmartNudgeStateUpdateResult> {
+  const [{ normalized: snoozed }, { normalized: dismissed }] = await Promise.all([
+    readSmartNudgeSnoozedMap(),
+    readSmartNudgeDismissedMap(),
+  ]);
+
+  if (action === 'clear') {
+    delete snoozed[nudgeKey];
+    delete dismissed[nudgeKey];
+
+    await Promise.all([
+      persistSmartNudgeSnoozedMap(snoozed),
+      persistSmartNudgeDismissedMap(dismissed),
+    ]);
+
+    return {
+      success: true,
+      nudgeKey,
+      action,
+      expiresAt: null,
+      dismissedAt: null,
+      snoozed,
+      dismissed,
+    };
+  }
+
+  if (action === 'dismiss') {
+    delete snoozed[nudgeKey];
+    const dismissedAt = new Date().toISOString();
+    dismissed[nudgeKey] = dismissedAt;
+
+    await Promise.all([
+      persistSmartNudgeSnoozedMap(snoozed),
+      persistSmartNudgeDismissedMap(dismissed),
+    ]);
+
+    return {
+      success: true,
+      nudgeKey,
+      action,
+      expiresAt: null,
+      dismissedAt,
+      snoozed,
+      dismissed,
+    };
+  }
+
+  const normalizedSnoozeDays = clampSmartNudgeSnoozeDays(snoozeDays);
+  const expiresAt = new Date(
+    Date.now() + normalizedSnoozeDays * 24 * 60 * 60 * 1000
+  ).toISOString();
+  snoozed[nudgeKey] = expiresAt;
+  delete dismissed[nudgeKey];
+
+  await Promise.all([
+    persistSmartNudgeSnoozedMap(snoozed),
+    persistSmartNudgeDismissedMap(dismissed),
+  ]);
+
+  return {
+    success: true,
+    nudgeKey,
+    action,
+    snoozeDays: normalizedSnoozeDays,
+    expiresAt,
+    dismissedAt: null,
+    snoozed,
+    dismissed,
+  };
 }

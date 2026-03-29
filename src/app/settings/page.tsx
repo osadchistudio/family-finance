@@ -434,7 +434,7 @@ export default function SettingsPage() {
           <div>
             <h2 className="text-lg font-semibold text-gray-900">תזכורות טלגרם</h2>
             <p className="text-sm text-gray-500">
-              תזכורת שבועית חכמה אם חסר דאטה, לא הייתה העלאה או נשארו תנועות לא משויכות
+              תזכורת שבועית עם Smart Nudges פעילים, כולל בעיות דאטה, לא מסווגות וחריגות בולטות
             </p>
           </div>
         </div>
@@ -455,7 +455,7 @@ export default function SettingsPage() {
               <div>
                 <p className="font-medium text-gray-900">הפעל תזכורת שבועית</p>
                 <p className="text-sm text-gray-500 mt-1">
-                  התזכורת נשלחת בטלגרם רק אם אחד התנאים שסימנת מתקיים
+                  התזכורת נשלחת בטלגרם אם אחד התנאים שסימנת מתקיים, וגם כשיש Smart Nudge בעדיפות גבוהה
                 </p>
               </div>
             </label>
@@ -533,6 +533,10 @@ export default function SettingsPage() {
                   <p className="text-xs text-gray-500">התזכורת תכלול קישור ישיר למסך הלא מסווגות</p>
                 </div>
               </label>
+
+              <div className="rounded-lg bg-sky-50 p-3 text-xs text-sky-800">
+                Smart Nudges בעדיפות גבוהה, כמו חריגת תקציב משתנות או העלאות שנכשלו שוב, יישלחו גם אם הם לא מסומנים בתנאים הוותיקים למעלה.
+              </div>
             </div>
 
             <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-700">

@@ -14,23 +14,7 @@ import {
   UploadCloud,
 } from 'lucide-react';
 import { showToast } from '@/components/ui/Toast';
-
-export interface SmartNudge {
-  key: string;
-  title: string;
-  description: string;
-  href: string;
-  actionLabel: string;
-  tone: 'info' | 'warning' | 'danger';
-  priority?: 'high' | 'medium' | 'low';
-  priorityLabel?: string;
-  snoozeKey?: string;
-}
-
-export interface SmartNudgesStatus {
-  periodLabel: string;
-  nudges: SmartNudge[];
-}
+import type { SmartNudge, SmartNudgesStatus } from '@/lib/smart-nudge-types';
 
 function toneClasses(tone: SmartNudge['tone']) {
   if (tone === 'danger') {

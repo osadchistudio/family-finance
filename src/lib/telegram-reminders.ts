@@ -1,10 +1,11 @@
 import dayjs from 'dayjs';
 import { Markup } from 'telegraf';
-import { prisma } from '@/lib/prisma';
 import { getTelegramBotService } from '@/services/telegram/TelegramBotService';
-import { buildPeriods, isBankInstitution, isCreditInstitution } from '@/lib/period-utils';
-import { getPeriodModeSetting, getTelegramReminderLastSentSlot, getTelegramReminderSettings, saveTelegramReminderLastSentSlot } from '@/lib/system-settings';
+import { getCurrentPeriodInsights } from '@/lib/current-period-insights';
+import { getSmartNudgesStatus } from '@/lib/smart-nudges';
+import { getTelegramReminderLastSentSlot, getTelegramReminderSettings, saveTelegramReminderLastSentSlot } from '@/lib/system-settings';
 import { APP_TIMEZONE, formatReminderHour, getWeekdayLabel, TelegramReminderSettings } from '@/lib/telegram-reminder-config';
+import type { SmartNudge } from '@/lib/smart-nudge-types';
 
 const WEEKDAY_INDEX_BY_SHORT_NAME: Record<string, number> = {
   Sun: 0,
@@ -16,14 +17,15 @@ const WEEKDAY_INDEX_BY_SHORT_NAME: Record<string, number> = {
   Sat: 6,
 };
 
-type ReminderReasonCode = 'no_uploads' | 'missing_sources' | 'uncategorized';
+type ReminderReasonCode = 'no_uploads' | 'missing_sources' | 'uncategorized' | 'smart_nudge';
 
 interface ReminderSnapshot {
   currentPeriodLabel: string;
-  currentPeriodSubLabel: string;
+  dateRangeLabel: string;
   missingSources: string[];
   recentUploadsLast7Days: number;
   uncategorizedCount: number;
+  smartNudges: SmartNudge[];
   triggeredReasons: Array<{
     code: ReminderReasonCode;
     text: string;
@@ -69,92 +71,95 @@ function getJerusalemNow() {
   };
 }
 
-async function buildReminderSnapshot(settings: TelegramReminderSettings): Promise<ReminderSnapshot> {
-  const [periodMode, accounts] = await Promise.all([
-    getPeriodModeSetting(),
-    prisma.account.findMany({
-      distinct: ['institution'],
-      select: { institution: true },
-    }),
-  ]);
+function buildTriggeredReasons(
+  settings: TelegramReminderSettings,
+  smartNudges: SmartNudge[]
+): ReminderSnapshot['triggeredReasons'] {
+  const nudgesByKey = new Map(smartNudges.map((nudge) => [nudge.key, nudge]));
+  const reasons: ReminderSnapshot['triggeredReasons'] = [];
 
-  const now = getJerusalemNow();
-  const currentPeriod = buildPeriods(periodMode, now.date, 1)[0];
-  const startDate = currentPeriod.startDate.startOf('day').toDate();
-  const endDate = currentPeriod.endDate.endOf('day').toDate();
-
-  const [recentUploadsLast7Days, periodTransactions] = await Promise.all([
-    prisma.fileUpload.count({
-      where: {
-        processedAt: {
-          gte: dayjs().subtract(7, 'day').toDate(),
-        },
-      },
-    }),
-    prisma.transaction.findMany({
-      where: {
-        isExcluded: false,
-        date: {
-          gte: startDate,
-          lte: endDate,
-        },
-      },
-      select: {
-        categoryId: true,
-        account: {
-          select: {
-            institution: true,
-          },
-        },
-      },
-    }),
-  ]);
-
-  const requiresBank = accounts.some((account) => isBankInstitution(account.institution));
-  const requiresCredit = accounts.some((account) => isCreditInstitution(account.institution));
-  const hasBankInCurrentPeriod = periodTransactions.some((tx) => isBankInstitution(tx.account.institution));
-  const hasCreditInCurrentPeriod = periodTransactions.some((tx) => isCreditInstitution(tx.account.institution));
-
-  const missingSources: string[] = [];
-  if (requiresBank && !hasBankInCurrentPeriod) {
-    missingSources.push('עו"ש');
-  }
-  if (requiresCredit && !hasCreditInCurrentPeriod) {
-    missingSources.push('אשראי');
-  }
-
-  const uncategorizedCount = periodTransactions.filter((tx) => !tx.categoryId).length;
-  const triggeredReasons: ReminderSnapshot['triggeredReasons'] = [];
-
-  if (settings.onlyIfNoUploadsInLast7Days && recentUploadsLast7Days === 0) {
-    triggeredReasons.push({
+  if (settings.onlyIfNoUploadsInLast7Days && nudgesByKey.has('stale-uploads')) {
+    reasons.push({
       code: 'no_uploads',
-      text: 'לא בוצעה העלאה ב-7 הימים האחרונים',
+      text: nudgesByKey.get('stale-uploads')?.title || 'לא נקלטו העלאות חדשות לאחרונה',
     });
   }
 
-  if (settings.onlyIfMissingCurrentPeriodSources && missingSources.length > 0) {
-    triggeredReasons.push({
+  if (settings.onlyIfMissingCurrentPeriodSources && nudgesByKey.has('missing-sources')) {
+    reasons.push({
       code: 'missing_sources',
-      text: `חסרים מקורות בתקופה הנוכחית: ${missingSources.join(', ')}`,
+      text: nudgesByKey.get('missing-sources')?.title || 'חסרים מקורות לתקופה הנוכחית',
     });
   }
 
-  if (settings.onlyIfUncategorizedTransactions && uncategorizedCount > 0) {
-    triggeredReasons.push({
+  if (settings.onlyIfUncategorizedTransactions && nudgesByKey.has('uncategorized')) {
+    reasons.push({
       code: 'uncategorized',
-      text: `יש ${uncategorizedCount} תנועות לא משויכות בתקופה הנוכחית`,
+      text: nudgesByKey.get('uncategorized')?.title || 'יש תנועות לא מסווגות בתקופה הנוכחית',
     });
   }
+
+  for (const nudge of smartNudges) {
+    if (
+      nudge.priority === 'high' &&
+      !['stale-uploads', 'missing-sources', 'uncategorized'].includes(nudge.key)
+    ) {
+      reasons.push({
+        code: 'smart_nudge',
+        text: `Smart Nudge בעדיפות גבוהה: ${nudge.title}`,
+      });
+    }
+  }
+
+  return reasons;
+}
+
+async function buildReminderSnapshot(settings: TelegramReminderSettings): Promise<ReminderSnapshot> {
+  const insights = await getCurrentPeriodInsights();
+  const smartNudgesStatus = await getSmartNudgesStatus(
+    insights.periodMode,
+    insights,
+    insights.budgetStatus
+  );
+  const triggeredReasons = buildTriggeredReasons(settings, smartNudgesStatus.nudges);
 
   return {
-    currentPeriodLabel: currentPeriod.label,
-    currentPeriodSubLabel: currentPeriod.subLabel,
-    missingSources,
-    recentUploadsLast7Days,
-    uncategorizedCount,
+    currentPeriodLabel: insights.periodLabel,
+    dateRangeLabel: insights.dateRangeLabel,
+    missingSources: insights.missingSources,
+    recentUploadsLast7Days: insights.recentUploadsLast7Days,
+    uncategorizedCount: insights.uncategorizedCount,
+    smartNudges: smartNudgesStatus.nudges,
     triggeredReasons,
   };
+}
+
+function getNudgeEmoji(nudge: SmartNudge): string {
+  if (nudge.key === 'missing-sources') {
+    return '📥';
+  }
+
+  if (nudge.key === 'uncategorized') {
+    return '🏷️';
+  }
+
+  if (nudge.key === 'stale-uploads') {
+    return '🕒';
+  }
+
+  if (nudge.key === 'failed-uploads') {
+    return '⚠️';
+  }
+
+  if (nudge.key === 'budget-overrun') {
+    return '🚨';
+  }
+
+  if (nudge.key === 'budget-warning') {
+    return '🎯';
+  }
+
+  return '💡';
 }
 
 function formatReminderMessage({
@@ -166,20 +171,40 @@ function formatReminderMessage({
   settingsDescription: string;
   mode: 'scheduled' | 'test';
 }) {
-  const heading = mode === 'test' ? '🧪 בדיקת תזכורת' : '⏰ תזכורת שבועית';
+  const heading = mode === 'test' ? '🧪 בדיקת Smart Nudges' : '🔔 Smart Nudges שבועיים';
   const lines = [
     heading,
     '',
-    `תקופה נוכחית: ${snapshot.currentPeriodLabel}`,
-    snapshot.currentPeriodSubLabel,
-    '',
+    `תקופה: ${snapshot.currentPeriodLabel}`,
+    snapshot.dateRangeLabel,
   ];
 
-  if (snapshot.triggeredReasons.length > 0) {
-    lines.push('מה דורש תשומת לב:');
-    snapshot.triggeredReasons.forEach((reason) => lines.push(`• ${reason.text}`));
+  if (snapshot.smartNudges.length > 0) {
+    lines.push('');
+    lines.push('מה דורש תשומת לב עכשיו:');
+
+    snapshot.smartNudges.slice(0, 3).forEach((nudge) => {
+      const prioritySuffix = nudge.priorityLabel ? ` · ${nudge.priorityLabel}` : '';
+      lines.push(`${getNudgeEmoji(nudge)} ${nudge.title}${prioritySuffix}`);
+      lines.push(nudge.description);
+      lines.push(`פעולה: ${nudge.actionLabel}`);
+      lines.push('');
+    });
+
+    if (snapshot.smartNudges.length > 3) {
+      lines.push(`ועוד ${snapshot.smartNudges.length - 3} התראות חכמות פתוחות בלוח הבקרה.`);
+    }
   } else {
-    lines.push('כרגע לא זוהתה בעיה דחופה לפי הכללים שסימנת');
+    lines.push('');
+    lines.push('כרגע אין Smart Nudges פעילים לפי מצב המערכת.');
+  }
+
+  if (snapshot.triggeredReasons.length > 0) {
+    lines.push('');
+    lines.push('מה הפעיל את התזכורת השבוע:');
+    for (const reason of snapshot.triggeredReasons) {
+      lines.push(`• ${reason.text}`);
+    }
   }
 
   lines.push('');
@@ -190,17 +215,28 @@ function formatReminderMessage({
 
 function buildReminderKeyboard(snapshot: ReminderSnapshot) {
   const baseUrl = (process.env.APP_BASE_URL || 'https://osadchi-systems.com').replace(/\/+$/, '');
-  const buttons = [[Markup.button.url('פתח העלאות', `${baseUrl}/upload`)]];
+  const seenHrefs = new Set<string>();
+  const rows = [];
 
-  if (snapshot.uncategorizedCount > 0) {
-    buttons.push([
-      Markup.button.url('פתח לא מסווגות', `${baseUrl}/transactions?categoryId=uncategorized`),
-    ]);
+  for (const nudge of snapshot.smartNudges) {
+    if (seenHrefs.has(nudge.href)) {
+      continue;
+    }
+
+    rows.push([Markup.button.url(nudge.actionLabel, `${baseUrl}${nudge.href}`)]);
+    seenHrefs.add(nudge.href);
+
+    if (rows.length >= 3) {
+      break;
+    }
   }
 
-  buttons.push([Markup.button.url('פתח תנועות', `${baseUrl}/transactions`)]);
+  rows.push([
+    Markup.button.url('פתח לוח בקרה', `${baseUrl}/`),
+    Markup.button.url('פתח סיכום חודשי', `${baseUrl}/monthly-summary`),
+  ]);
 
-  return Markup.inlineKeyboard(buttons);
+  return Markup.inlineKeyboard(rows);
 }
 
 export async function runTelegramReminder({
@@ -244,12 +280,8 @@ export async function runTelegramReminder({
   }
 
   const snapshot = await buildReminderSnapshot(settings);
-  const trackedConditionsEnabled =
-    settings.onlyIfNoUploadsInLast7Days ||
-    settings.onlyIfMissingCurrentPeriodSources ||
-    settings.onlyIfUncategorizedTransactions;
 
-  if (!force && trackedConditionsEnabled && snapshot.triggeredReasons.length === 0) {
+  if (!force && snapshot.triggeredReasons.length === 0) {
     return {
       status: 'skipped',
       mode: 'scheduled',
@@ -260,7 +292,7 @@ export async function runTelegramReminder({
       recentUploadsLast7Days: snapshot.recentUploadsLast7Days,
       uncategorizedCount: snapshot.uncategorizedCount,
       currentPeriodLabel: snapshot.currentPeriodLabel,
-      currentPeriodSubLabel: snapshot.currentPeriodSubLabel,
+      currentPeriodSubLabel: snapshot.dateRangeLabel,
     };
   }
 
@@ -277,7 +309,7 @@ export async function runTelegramReminder({
         recentUploadsLast7Days: snapshot.recentUploadsLast7Days,
         uncategorizedCount: snapshot.uncategorizedCount,
         currentPeriodLabel: snapshot.currentPeriodLabel,
-        currentPeriodSubLabel: snapshot.currentPeriodSubLabel,
+        currentPeriodSubLabel: snapshot.dateRangeLabel,
       };
     }
   }
@@ -304,7 +336,7 @@ export async function runTelegramReminder({
       recentUploadsLast7Days: snapshot.recentUploadsLast7Days,
       uncategorizedCount: snapshot.uncategorizedCount,
       currentPeriodLabel: snapshot.currentPeriodLabel,
-      currentPeriodSubLabel: snapshot.currentPeriodSubLabel,
+      currentPeriodSubLabel: snapshot.dateRangeLabel,
     };
   }
 
@@ -321,6 +353,6 @@ export async function runTelegramReminder({
     recentUploadsLast7Days: snapshot.recentUploadsLast7Days,
     uncategorizedCount: snapshot.uncategorizedCount,
     currentPeriodLabel: snapshot.currentPeriodLabel,
-    currentPeriodSubLabel: snapshot.currentPeriodSubLabel,
+    currentPeriodSubLabel: snapshot.dateRangeLabel,
   };
 }

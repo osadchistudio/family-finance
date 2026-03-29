@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-03-12
+Last updated: 2026-03-29
 
 ## Scope (Canonical)
 This document is **only** for the `family-finance` web application
@@ -118,6 +118,8 @@ Out of scope:
     - uncategorized transactions in the current period
   - test-send from `/settings`
   - secure cron trigger via `/api/telegram/reminders/run` guarded by `TELEGRAM_REMINDER_SECRET`
+- Telegram reminders now send the active Smart Nudges themselves, with action buttons that match the dashboard links
+- High-priority Smart Nudges such as budget overruns or repeated failed uploads can now trigger Telegram reminders even outside the older reminder checkbox set
 
 ### Dashboard
 - Presents generalized monthly picture (averages, not just current month totals)
@@ -190,6 +192,33 @@ Out of scope:
   - use `שלח בדיקה עכשיו` in `/settings`
 
 ## Consolidated change log (major milestones)
+
+### 2026-03-29 - Connected Smart Nudges to Telegram reminders
+Why:
+- Smart Nudges had become the clearest prioritization layer in the dashboard, but Telegram reminders were still built from older standalone rules
+- Without a shared engine, the dashboard and Telegram risked drifting and surfacing different priorities for the same period
+
+What changed:
+- Extracted the Smart Nudges engine into a shared server-side helper so the dashboard and Telegram use the same priority, recurrence, and wording logic
+- Changed Telegram reminders to send the active Smart Nudges themselves, including direct action buttons based on the nudge links
+- Upgraded reminder triggering so high-priority Smart Nudges such as variable-budget overruns or repeated failed uploads can trigger delivery even when they are outside the older reminder checkbox set
+- Updated `/settings` copy so the reminder behavior now explains that high-priority Smart Nudges may also trigger a Telegram send
+
+Files touched:
+- `/src/lib/smart-nudge-types.ts`
+- `/src/lib/smart-nudges.ts`
+- `/src/app/page.tsx`
+- `/src/components/dashboard/SmartNudgesCard.tsx`
+- `/src/lib/telegram-reminders.ts`
+- `/src/app/settings/page.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy required
+- No DB migration
+- No new environment variables
+- Telegram reminder runs now execute the shared Smart Nudges engine before sending, so reminder content and dashboard priorities stay aligned
+- Weekly reminders may now fire for high-priority Smart Nudges even when they are not covered by the legacy reminder checkboxes
 
 ### 2026-03-26 - Escalated recurring Smart Nudges and made actions more explicit
 Why:

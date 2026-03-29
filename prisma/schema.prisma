@@ -95,6 +95,58 @@ model Transaction {
   @@index([date])
 }
 
+// קבלה בודדת מחנות/סופר
+model Receipt {
+  id                  String        @id @default(uuid())
+  storeId             String?
+  store               Store?        @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  capturedAt          DateTime      @default(now())
+  purchaseAt          DateTime?
+  totalAmount         Decimal?      @db.Decimal(12, 2)
+  currency            String        @default("ILS")
+  status              ReceiptStatus @default(PENDING_UPLOAD)
+  imageStorageKey     String?
+  thumbnailStorageKey String?
+  rawOcrText          String?
+  parserVersion       String?
+  parseError          String?
+  notes               String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  items ReceiptItem[]
+
+  @@index([status, capturedAt])
+  @@index([purchaseAt])
+  @@index([storeId, purchaseAt])
+}
+
+// שורה בודדת מתוך קבלה
+model ReceiptItem {
+  id              String                  @id @default(uuid())
+  receiptId       String
+  receipt         Receipt                 @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  productId       String?
+  product         Product?                @relation(fields: [productId], references: [id], onDelete: SetNull)
+  rawName         String
+  normalizedName  String?
+  brand           String?
+  quantity        Decimal?                @db.Decimal(12, 3)
+  unit            String?
+  unitPrice       Decimal?                @db.Decimal(12, 2)
+  linePrice       Decimal?                @db.Decimal(12, 2)
+  discountAmount  Decimal?                @db.Decimal(12, 2)
+  confidenceScore Float?
+  reviewStatus    ReceiptItemReviewStatus @default(UNREVIEWED)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  priceObservations PriceObservation[]
+
+  @@index([receiptId])
+  @@index([productId])
+}
+
 // קטגוריה
 model Category {
   id        String       @id @default(uuid())
@@ -140,6 +192,77 @@ model RecurringKeyword {
   @@index([keyword])
 }
 
+// חנות/סניף שמופיעים בקבלות
+model Store {
+  id            String   @id @default(uuid())
+  name          String
+  chain         String?
+  branchName    String?
+  branchAddress String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  receipts          Receipt[]
+  priceObservations PriceObservation[]
+
+  @@index([name])
+  @@index([chain, name])
+}
+
+// מוצר קנוני להיסטוריית מחירים וקניות
+model Product {
+  id            String   @id @default(uuid())
+  canonicalName String
+  brand         String?
+  categoryName  String?
+  barcode       String?  @unique
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  aliases           ProductAlias[]
+  receiptItems      ReceiptItem[]
+  priceObservations PriceObservation[]
+
+  @@index([canonicalName])
+  @@index([brand])
+}
+
+// וריאציות OCR/משתמש לאותו מוצר
+model ProductAlias {
+  id        String             @id @default(uuid())
+  productId String
+  product   Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  alias     String
+  source    ProductAliasSource
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@unique([productId, alias])
+  @@index([alias])
+}
+
+// תצפית מחיר בודדת למוצר
+model PriceObservation {
+  id             String       @id @default(uuid())
+  productId      String
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  receiptItemId  String?
+  receiptItem    ReceiptItem? @relation(fields: [receiptItemId], references: [id], onDelete: SetNull)
+  storeId        String?
+  store          Store?       @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  observedAt     DateTime
+  quantity       Decimal?     @db.Decimal(12, 3)
+  unitPrice      Decimal?     @db.Decimal(12, 2)
+  linePrice      Decimal?     @db.Decimal(12, 2)
+  promotionLabel String?
+  createdAt      DateTime     @default(now())
+
+  @@index([productId, observedAt])
+  @@index([storeId, observedAt])
+  @@index([receiptItemId])
+}
+
 // הגדרות מערכת
 model Setting {
   id    String @id @default(uuid())
@@ -148,4 +271,25 @@ model Setting {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum ReceiptStatus {
+  PENDING_UPLOAD
+  PROCESSING
+  NEEDS_REVIEW
+  COMPLETED
+  FAILED
+}
+
+enum ReceiptItemReviewStatus {
+  UNREVIEWED
+  CONFIRMED
+  EDITED
+  REJECTED
+}
+
+enum ProductAliasSource {
+  OCR
+  USER
+  IMPORT
 }

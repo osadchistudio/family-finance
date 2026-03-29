@@ -196,6 +196,28 @@ Out of scope:
 
 ## Consolidated change log (major milestones)
 
+### 2026-03-29 - Added initial receipt-domain Prisma schema foundation
+Why:
+- The receipts mobile app should stay separated from the existing transaction flows, but still connect cleanly to the same backend over time
+- Before building receipt APIs or an iPhone app, the backend needed a dedicated data model for receipts, products, stores, and price history instead of overloading the current `Transaction` schema
+
+What changed:
+- Added initial Prisma models for `Receipt`, `ReceiptItem`, `Store`, `Product`, `ProductAlias`, and `PriceObservation`
+- Added supporting enums for receipt processing state, receipt-item review state, and product-alias source
+- Added a SQL migration that creates the new receipt-domain tables, indexes, and foreign keys while keeping them isolated from the current transaction ingestion pipeline
+- Kept the new schema intentionally separate from bank/card transactions so receipt capture can evolve as its own mobile-first domain
+
+Files touched:
+- `/prisma/schema.prisma`
+- `/prisma/migrations/20260329123000_add_receipts_domain/migration.sql`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Applying the new Prisma migration is required before any future receipt APIs or mobile receipt flows can be enabled
+- No current user-facing web flow changes yet
+- No new environment variables yet
+- The existing transaction upload and categorization runtime are unchanged
+
 ### 2026-03-29 - Added Telegram snooze and dismiss actions for Smart Nudges
 Why:
 - Once Smart Nudges started reaching Telegram, the next friction point was that they were still read-only there

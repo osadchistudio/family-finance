@@ -196,6 +196,30 @@ Out of scope:
 
 ## Consolidated change log (major milestones)
 
+### 2026-03-29 - Added initial receipts API skeleton for mobile/backend integration
+Why:
+- After defining the dedicated receipt-domain schema, the next step was exposing a clean backend surface the future mobile app can talk to without touching the current bank/card transaction flows
+- The first receipt APIs needed to stay useful even before OCR and image upload flows exist, so the backend can already create, list, inspect, and edit receipt drafts
+
+What changed:
+- Added a dedicated receipts helper layer with typed request parsing, raw-SQL persistence helpers, store resolution, and safe error handling around the new receipt-domain tables
+- Added `GET /api/receipts` and `POST /api/receipts` for listing existing receipt drafts and creating new receipt records
+- Added `GET /api/receipts/:id` and `PATCH /api/receipts/:id` for receipt detail views and metadata updates such as status, store, totals, notes, OCR text, and parser fields
+- Added explicit runtime handling for environments where the receipt Prisma migration has not been applied yet, returning a clean `503` instead of a generic server crash
+- Kept the new API intentionally isolated from the existing transaction upload/categorization APIs so the future cross-platform mobile app can evolve as its own receipt domain
+
+Files touched:
+- `/src/lib/receipts.ts`
+- `/src/app/api/receipts/route.ts`
+- `/src/app/api/receipts/[id]/route.ts`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- The receipt-domain migration must be applied before these endpoints can be used in production
+- No current web UI routes depend on these endpoints yet, so there is no visible change in the existing dashboard or transactions pages
+- No new environment variables were added
+- These endpoints are the backend foundation for the future iPhone/Android receipt-capture app and review flow
+
 ### 2026-03-29 - Added initial receipt-domain Prisma schema foundation
 Why:
 - The receipts mobile app should stay separated from the existing transaction flows, but still connect cleanly to the same backend over time

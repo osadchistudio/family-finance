@@ -196,6 +196,26 @@ Out of scope:
 
 ## Consolidated change log (major milestones)
 
+### 2026-03-30 - Added receipt image upload endpoint for the mobile capture flow
+Why:
+- The mobile receipt app now needs more than a draft-record API; it needs a real way to attach the captured receipt image immediately after checkout
+- A separate image-upload step keeps the flow fast and safe: create the receipt draft first, upload the image second, and leave OCR/review for the next step
+
+What changed:
+- Added a dedicated receipt-image storage helper that validates uploaded image files and saves them under a runtime receipt-image directory on the server
+- Added `POST /api/receipts/:id/image` to attach a captured image to an existing receipt draft and update the receipt status to `PROCESSING`
+- Kept image upload separated from OCR so the future mobile app can capture first and enrich/process later without blocking the user in the supermarket
+
+Files touched:
+- `/src/lib/receipt-image-storage.ts`
+- `/src/app/api/receipts/[id]/image/route.ts`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Receipt images are currently stored on the app server filesystem under `runtime-data/receipts/<receiptId>/...`, so server disk persistence matters until object storage is introduced
+- The receipt-domain Prisma migration is still required before the endpoint can be used
+- No existing dashboard or transaction pages depend on this route yet, so the current site should keep behaving the same after deploy
+
 ### 2026-03-30 - Expanded receipts backend for item review and processing flows
 Why:
 - The first receipts API skeleton was enough for draft receipt creation, but the future mobile app also needs dedicated endpoints for OCR/process updates and line-item review flows

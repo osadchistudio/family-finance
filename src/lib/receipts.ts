@@ -12,6 +12,15 @@ export const RECEIPT_STATUSES = [
 
 export type ReceiptStatus = typeof RECEIPT_STATUSES[number];
 
+export const RECEIPT_ITEM_REVIEW_STATUSES = [
+  'UNREVIEWED',
+  'CONFIRMED',
+  'EDITED',
+  'REJECTED',
+] as const;
+
+export type ReceiptItemReviewStatus = typeof RECEIPT_ITEM_REVIEW_STATUSES[number];
+
 export interface ReceiptStoreSummary {
   id: string;
   name: string;
@@ -99,6 +108,38 @@ export interface UpdateReceiptInput {
   parserVersion?: string | null;
   parseError?: string | null;
   notes?: string | null;
+}
+
+export interface ReceiptProcessInput extends UpdateReceiptInput {
+  status?: ReceiptStatus;
+}
+
+export interface CreateReceiptItemInput {
+  rawName: string;
+  normalizedName?: string | null;
+  brand?: string | null;
+  quantity?: number | null;
+  unit?: string | null;
+  unitPrice?: number | null;
+  linePrice?: number | null;
+  discountAmount?: number | null;
+  confidenceScore?: number | null;
+  reviewStatus?: ReceiptItemReviewStatus;
+  productId?: string | null;
+}
+
+export interface UpdateReceiptItemInput {
+  rawName?: string;
+  normalizedName?: string | null;
+  brand?: string | null;
+  quantity?: number | null;
+  unit?: string | null;
+  unitPrice?: number | null;
+  linePrice?: number | null;
+  discountAmount?: number | null;
+  confidenceScore?: number | null;
+  reviewStatus?: ReceiptItemReviewStatus;
+  productId?: string | null;
 }
 
 type ReceiptRow = {
@@ -258,6 +299,35 @@ function normalizeOptionalStatus(value: unknown): ReceiptStatus {
   }
 
   return value as ReceiptStatus;
+}
+
+function normalizeOptionalReviewStatus(value: unknown): ReceiptItemReviewStatus {
+  if (
+    typeof value !== 'string'
+    || !RECEIPT_ITEM_REVIEW_STATUSES.includes(value as ReceiptItemReviewStatus)
+  ) {
+    throw new ReceiptInputError(
+      `reviewStatus must be one of: ${RECEIPT_ITEM_REVIEW_STATUSES.join(', ')}`
+    );
+  }
+
+  return value as ReceiptItemReviewStatus;
+}
+
+function normalizeConfidenceScore(value: unknown, fieldName: string): number | null {
+  if (value === null || value === '') return null;
+
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number(value)
+      : NaN;
+
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new ReceiptInputError(`${fieldName} must be between 0 and 1`);
+  }
+
+  return parsed;
 }
 
 function normalizeDbCode(error: unknown): string | null {
@@ -575,6 +645,108 @@ export function parseUpdateReceiptInput(body: unknown): UpdateReceiptInput {
   return input;
 }
 
+function parseReceiptItemRecord(
+  body: unknown,
+  options: { partial: boolean }
+): CreateReceiptItemInput | UpdateReceiptItemInput {
+  if (!isRecord(body)) {
+    throw new ReceiptInputError('Receipt item payload must be an object');
+  }
+
+  const input: CreateReceiptItemInput | UpdateReceiptItemInput = {};
+
+  if (hasOwnField(body, 'rawName')) {
+    const rawName = normalizeNullableText(body.rawName, 'rawName');
+    if (!rawName) {
+      throw new ReceiptInputError('rawName is required');
+    }
+    input.rawName = rawName;
+  } else if (!options.partial) {
+    throw new ReceiptInputError('rawName is required');
+  }
+
+  if (hasOwnField(body, 'normalizedName')) {
+    input.normalizedName = normalizeNullableText(body.normalizedName, 'normalizedName');
+  }
+
+  if (hasOwnField(body, 'brand')) {
+    input.brand = normalizeNullableText(body.brand, 'brand');
+  }
+
+  if (hasOwnField(body, 'quantity')) {
+    input.quantity = normalizeNonNegativeNumber(body.quantity, 'quantity');
+  }
+
+  if (hasOwnField(body, 'unit')) {
+    input.unit = normalizeNullableText(body.unit, 'unit');
+  }
+
+  if (hasOwnField(body, 'unitPrice')) {
+    input.unitPrice = normalizeNonNegativeNumber(body.unitPrice, 'unitPrice');
+  }
+
+  if (hasOwnField(body, 'linePrice')) {
+    input.linePrice = normalizeNonNegativeNumber(body.linePrice, 'linePrice');
+  }
+
+  if (hasOwnField(body, 'discountAmount')) {
+    input.discountAmount = normalizeNonNegativeNumber(body.discountAmount, 'discountAmount');
+  }
+
+  if (hasOwnField(body, 'confidenceScore')) {
+    input.confidenceScore = normalizeConfidenceScore(body.confidenceScore, 'confidenceScore');
+  }
+
+  if (hasOwnField(body, 'reviewStatus')) {
+    input.reviewStatus = normalizeOptionalReviewStatus(body.reviewStatus);
+  }
+
+  if (hasOwnField(body, 'productId')) {
+    input.productId = normalizeNullableText(body.productId, 'productId');
+  }
+
+  if (options.partial && Object.keys(input).length === 0) {
+    throw new ReceiptInputError('At least one mutable receipt item field is required');
+  }
+
+  return input;
+}
+
+export function parseCreateReceiptItemsInput(body: unknown): CreateReceiptItemInput[] {
+  let rawItems: unknown;
+
+  if (Array.isArray(body)) {
+    rawItems = body;
+  } else if (isRecord(body) && Array.isArray(body.items)) {
+    rawItems = body.items;
+  } else {
+    throw new ReceiptInputError('items must be an array');
+  }
+
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    throw new ReceiptInputError('At least one receipt item is required');
+  }
+
+  return rawItems.map(item => parseReceiptItemRecord(item, { partial: false }) as CreateReceiptItemInput);
+}
+
+export function parseUpdateReceiptItemInput(body: unknown): UpdateReceiptItemInput {
+  return parseReceiptItemRecord(body, { partial: true }) as UpdateReceiptItemInput;
+}
+
+export function parseReceiptProcessInput(body: unknown): ReceiptProcessInput {
+  const input = parseUpdateReceiptInput(body);
+
+  if (Object.prototype.hasOwnProperty.call(input, 'status')) {
+    return input;
+  }
+
+  return {
+    ...input,
+    status: input.parseError ? 'FAILED' : 'NEEDS_REVIEW',
+  };
+}
+
 export async function listReceipts(options: ListReceiptsOptions = {}) {
   return runReceiptQuery(async () => {
     const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
@@ -623,23 +795,40 @@ export async function listReceipts(options: ListReceiptsOptions = {}) {
   });
 }
 
-export async function getReceiptById(id: string) {
+export async function receiptExists(id: string) {
   return runReceiptQuery(async () => {
-    const rows = await prisma.$queryRaw<ReceiptRow[]>(Prisma.sql`
-      ${RECEIPT_SELECT}
-      WHERE r.id = ${id}
-      GROUP BY
-        r.id,
-        s.id,
-        s.name,
-        s.chain,
-        s."branchName",
-        s."branchAddress"
-      LIMIT 1
+    const rows = await prisma.$queryRaw<{ exists: number }[]>(Prisma.sql`
+      SELECT CASE WHEN EXISTS (
+        SELECT 1
+        FROM "Receipt"
+        WHERE id = ${id}
+      ) THEN 1 ELSE 0 END::int AS exists
     `);
 
-    const receiptRow = rows[0];
-    if (!receiptRow) {
+    return Number(rows[0]?.exists ?? 0) === 1;
+  });
+}
+
+async function assertProductExists(productId: string | null | undefined) {
+  if (!productId) return;
+
+  const rows = await prisma.$queryRaw<{ exists: number }[]>(Prisma.sql`
+    SELECT CASE WHEN EXISTS (
+      SELECT 1
+      FROM "Product"
+      WHERE id = ${productId}
+    ) THEN 1 ELSE 0 END::int AS exists
+  `);
+
+  if (Number(rows[0]?.exists ?? 0) !== 1) {
+    throw new ReceiptInputError('Product not found');
+  }
+}
+
+export async function listReceiptItems(receiptId: string) {
+  return runReceiptQuery(async () => {
+    const exists = await receiptExists(receiptId);
+    if (!exists) {
       return null;
     }
 
@@ -662,9 +851,33 @@ export async function getReceiptById(id: string) {
         i."updatedAt"
       FROM "ReceiptItem" i
       LEFT JOIN "Product" p ON p.id = i."productId"
-      WHERE i."receiptId" = ${id}
+      WHERE i."receiptId" = ${receiptId}
       ORDER BY i."createdAt" ASC, i.id ASC
     `);
+
+    return itemRows.map(mapReceiptItemRow);
+  });
+}
+
+export async function getReceiptById(id: string) {
+  return runReceiptQuery(async () => {
+    const rows = await prisma.$queryRaw<ReceiptRow[]>(Prisma.sql`
+      ${RECEIPT_SELECT}
+      WHERE r.id = ${id}
+      GROUP BY
+        r.id,
+        s.id,
+        s.name,
+        s.chain,
+        s."branchName",
+        s."branchAddress"
+      LIMIT 1
+    `);
+
+    const receiptRow = rows[0];
+    if (!receiptRow) {
+      return null;
+    }
 
     return {
       ...mapReceiptRow(receiptRow),
@@ -680,7 +893,7 @@ export async function getReceiptById(id: string) {
             branchAddress: receiptRow.storeBranchAddress,
           }
         : null,
-      items: itemRows.map(mapReceiptItemRow),
+      items: (await listReceiptItems(id)) ?? [],
     } satisfies ReceiptDetail;
   });
 }
@@ -730,6 +943,88 @@ export async function createReceipt(input: CreateReceiptInput) {
     `);
 
     return getReceiptById(id);
+  });
+}
+
+export async function createReceiptItems(
+  receiptId: string,
+  items: CreateReceiptItemInput[]
+) {
+  return runReceiptQuery(async () => {
+    const exists = await receiptExists(receiptId);
+    if (!exists) {
+      return null;
+    }
+
+    const createdIds: string[] = [];
+
+    for (const item of items) {
+      await assertProductExists(item.productId);
+
+      const id = randomUUID();
+      createdIds.push(id);
+
+      await prisma.$executeRaw(Prisma.sql`
+        INSERT INTO "ReceiptItem" (
+          "id",
+          "receiptId",
+          "productId",
+          "rawName",
+          "normalizedName",
+          "brand",
+          "quantity",
+          "unit",
+          "unitPrice",
+          "linePrice",
+          "discountAmount",
+          "confidenceScore",
+          "reviewStatus",
+          "createdAt",
+          "updatedAt"
+        ) VALUES (
+          ${id},
+          ${receiptId},
+          ${item.productId ?? null},
+          ${item.rawName},
+          ${item.normalizedName ?? null},
+          ${item.brand ?? null},
+          ${item.quantity ?? null},
+          ${item.unit ?? null},
+          ${item.unitPrice ?? null},
+          ${item.linePrice ?? null},
+          ${item.discountAmount ?? null},
+          ${item.confidenceScore ?? null},
+          ${(item.reviewStatus ?? 'UNREVIEWED')}::"ReceiptItemReviewStatus",
+          NOW(),
+          NOW()
+        )
+      `);
+    }
+
+    const createdRows = await prisma.$queryRaw<ReceiptItemRow[]>(Prisma.sql`
+      SELECT
+        i.id,
+        i."productId",
+        p."canonicalName" AS "productCanonicalName",
+        i."rawName",
+        i."normalizedName",
+        i.brand,
+        i.quantity,
+        i.unit,
+        i."unitPrice",
+        i."linePrice",
+        i."discountAmount",
+        i."confidenceScore",
+        i."reviewStatus"::text AS "reviewStatus",
+        i."createdAt",
+        i."updatedAt"
+      FROM "ReceiptItem" i
+      LEFT JOIN "Product" p ON p.id = i."productId"
+      WHERE i.id IN (${Prisma.join(createdIds, ', ')})
+      ORDER BY i."createdAt" ASC, i.id ASC
+    `);
+
+    return createdRows.map(mapReceiptItemRow);
   });
 }
 
@@ -805,5 +1100,120 @@ export async function updateReceipt(id: string, input: UpdateReceiptInput) {
     }
 
     return getReceiptById(id);
+  });
+}
+
+export async function updateReceiptItem(
+  receiptId: string,
+  itemId: string,
+  input: UpdateReceiptItemInput
+) {
+  return runReceiptQuery(async () => {
+    const exists = await receiptExists(receiptId);
+    if (!exists) {
+      return null;
+    }
+
+    const assignments: Prisma.Sql[] = [];
+
+    if (Object.prototype.hasOwnProperty.call(input, 'rawName')) {
+      assignments.push(Prisma.sql`"rawName" = ${input.rawName}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(input, 'normalizedName')) {
+      assignments.push(Prisma.sql`"normalizedName" = ${input.normalizedName ?? null}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(input, 'brand')) {
+      assignments.push(Prisma.sql`brand = ${input.brand ?? null}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(input, 'quantity')) {
+      assignments.push(Prisma.sql`quantity = ${input.quantity ?? null}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(input, 'unit')) {
+      assignments.push(Prisma.sql`unit = ${input.unit ?? null}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(input, 'unitPrice')) {
+      assignments.push(Prisma.sql`"unitPrice" = ${input.unitPrice ?? null}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(input, 'linePrice')) {
+      assignments.push(Prisma.sql`"linePrice" = ${input.linePrice ?? null}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(input, 'discountAmount')) {
+      assignments.push(Prisma.sql`"discountAmount" = ${input.discountAmount ?? null}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(input, 'confidenceScore')) {
+      assignments.push(Prisma.sql`"confidenceScore" = ${input.confidenceScore ?? null}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(input, 'reviewStatus')) {
+      assignments.push(
+        Prisma.sql`"reviewStatus" = ${input.reviewStatus}::"ReceiptItemReviewStatus"`
+      );
+    }
+
+    if (Object.prototype.hasOwnProperty.call(input, 'productId')) {
+      await assertProductExists(input.productId);
+      assignments.push(Prisma.sql`"productId" = ${input.productId ?? null}`);
+    }
+
+    if (assignments.length === 0) {
+      throw new ReceiptInputError('At least one mutable receipt item field is required');
+    }
+
+    assignments.push(Prisma.sql`"updatedAt" = NOW()`);
+
+    const updatedCount = await prisma.$executeRaw(Prisma.sql`
+      UPDATE "ReceiptItem"
+      SET ${Prisma.join(assignments, ', ')}
+      WHERE id = ${itemId}
+        AND "receiptId" = ${receiptId}
+    `);
+
+    if (updatedCount === 0) {
+      return false;
+    }
+
+    const updatedRows = await prisma.$queryRaw<ReceiptItemRow[]>(Prisma.sql`
+      SELECT
+        i.id,
+        i."productId",
+        p."canonicalName" AS "productCanonicalName",
+        i."rawName",
+        i."normalizedName",
+        i.brand,
+        i.quantity,
+        i.unit,
+        i."unitPrice",
+        i."linePrice",
+        i."discountAmount",
+        i."confidenceScore",
+        i."reviewStatus"::text AS "reviewStatus",
+        i."createdAt",
+        i."updatedAt"
+      FROM "ReceiptItem" i
+      LEFT JOIN "Product" p ON p.id = i."productId"
+      WHERE i.id = ${itemId}
+        AND i."receiptId" = ${receiptId}
+      LIMIT 1
+    `);
+
+    return updatedRows[0] ? mapReceiptItemRow(updatedRows[0]) : false;
+  });
+}
+
+export async function processReceipt(
+  receiptId: string,
+  input: ReceiptProcessInput
+) {
+  return updateReceipt(receiptId, {
+    ...input,
+    status: input.status ?? (input.parseError ? 'FAILED' : 'NEEDS_REVIEW'),
   });
 }

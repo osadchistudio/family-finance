@@ -196,6 +196,30 @@ Out of scope:
 
 ## Consolidated change log (major milestones)
 
+### 2026-03-30 - Expanded receipts backend for item review and processing flows
+Why:
+- The first receipts API skeleton was enough for draft receipt creation, but the future mobile app also needs dedicated endpoints for OCR/process updates and line-item review flows
+- Keeping those flows in separate endpoints makes the mobile app faster and cleaner: capture first, then process metadata, then review or edit line items
+
+What changed:
+- Added receipt-item parsing and persistence helpers so receipt line items can now be listed, created in bulk, and updated individually
+- Added `GET /api/receipts/:id/items` and `POST /api/receipts/:id/items` for retrieving and creating receipt line items
+- Added `PATCH /api/receipts/:id/items/:itemId` for editing a single line item during review
+- Added `POST /api/receipts/:id/process` as a lightweight processing endpoint that updates receipt OCR/parser metadata and automatically derives a sensible next status (`NEEDS_REVIEW` or `FAILED`) when the client does not send one
+- Kept all new receipt endpoints isolated from the existing transaction ingestion and categorization flows
+
+Files touched:
+- `/src/lib/receipts.ts`
+- `/src/app/api/receipts/[id]/items/route.ts`
+- `/src/app/api/receipts/[id]/items/[itemId]/route.ts`
+- `/src/app/api/receipts/[id]/process/route.ts`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- The receipt-domain Prisma migration still has to be applied before these endpoints can be used in production
+- No existing dashboard or transactions UI depends on these new endpoints yet, so the current site should behave the same after deploy
+- These endpoints complete the backend skeleton needed for a camera-first cross-platform receipts app to start integrating safely
+
 ### 2026-03-29 - Added initial receipts API skeleton for mobile/backend integration
 Why:
 - After defining the dedicated receipt-domain schema, the next step was exposing a clean backend surface the future mobile app can talk to without touching the current bank/card transaction flows

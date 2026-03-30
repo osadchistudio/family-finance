@@ -1,8 +1,9 @@
-import { rm, stat } from 'node:fs/promises';
-import path from 'node:path';
 import { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
-import { getReceiptImageAbsolutePath, getReceiptStorageRootDir } from './receipt-image-storage';
+import {
+  deleteReceiptImageStorageKey,
+  removeEmptyLocalReceiptDirs,
+} from './receipt-image-storage';
 
 const DEFAULT_RETENTION_DAYS = 45;
 const CLEANABLE_STATUSES = ['COMPLETED', 'FAILED'] as const;
@@ -74,52 +75,6 @@ function normalizeCleanupError(error: unknown): never {
   throw error;
 }
 
-async function safeFileSize(absolutePath: string) {
-  try {
-    const fileStat = await stat(absolutePath);
-    if (!fileStat.isFile()) return 0;
-    return fileStat.size;
-  } catch {
-    return 0;
-  }
-}
-
-async function deleteStoredFile(absolutePath: string, dryRun: boolean) {
-  const sizeBytes = await safeFileSize(absolutePath);
-  const existed = sizeBytes > 0;
-
-  if (existed && !dryRun) {
-    await rm(absolutePath, { force: true });
-  }
-
-  return {
-    existed,
-    sizeBytes,
-  };
-}
-
-async function removeEmptyReceiptDirs(storageKeys: string[], dryRun: boolean) {
-  const root = getReceiptStorageRootDir();
-  const dirs = new Set<string>();
-
-  for (const storageKey of storageKeys) {
-    const absolutePath = getReceiptImageAbsolutePath(storageKey);
-    const dirPath = path.dirname(absolutePath);
-    const relativeDir = path.relative(root, dirPath);
-
-    if (!relativeDir.startsWith('..')) {
-      dirs.add(dirPath);
-    }
-  }
-
-  const sortedDirs = Array.from(dirs).sort((left, right) => right.length - left.length);
-  for (const dir of sortedDirs) {
-    if (!dryRun) {
-      await rm(dir, { recursive: false, force: true }).catch(() => undefined);
-    }
-  }
-}
-
 function getRetentionDays(options?: ReceiptImageCleanupOptions) {
   const configured = options?.retentionDays
     ?? Number(process.env.RECEIPT_IMAGE_RETENTION_DAYS || DEFAULT_RETENTION_DAYS);
@@ -170,7 +125,7 @@ export async function runReceiptImageCleanup(options: ReceiptImageCleanupOptions
       let deletedForReceipt = 0;
 
       for (const storageKey of uniqueStorageKeys) {
-        const result = await deleteStoredFile(getReceiptImageAbsolutePath(storageKey), dryRun);
+        const result = await deleteReceiptImageStorageKey(storageKey, { dryRun });
         if (result.existed) {
           deletedFiles += 1;
           deletedForReceipt += 1;
@@ -191,7 +146,7 @@ export async function runReceiptImageCleanup(options: ReceiptImageCleanupOptions
         `);
       }
 
-      await removeEmptyReceiptDirs(uniqueStorageKeys, dryRun);
+      await removeEmptyLocalReceiptDirs(uniqueStorageKeys, dryRun);
       if (deletedForReceipt > 0 || uniqueStorageKeys.length > 0) {
         cleanedReceipts += 1;
       }

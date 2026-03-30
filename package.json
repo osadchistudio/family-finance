@@ -16,6 +16,7 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.3.0",
     "@prisma/client": "^7.3.0",
+    "@supabase/supabase-js": "^2.101.0",
     "csv-parse": "^6.1.0",
     "dayjs": "^1.11.19",
     "decimal.js": "^10.6.0",

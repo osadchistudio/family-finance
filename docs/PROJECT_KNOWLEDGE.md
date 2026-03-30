@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-03-30
+Last updated: 2026-03-31
 
 ## Scope (Canonical)
 This document is **only** for the `family-finance` web application
@@ -46,11 +46,15 @@ Out of scope:
 - `TELEGRAM_WEBHOOK_SECRET` (optional)
 - `TELEGRAM_ALLOWED_CHAT_IDS` (required in production for secure Telegram access)
 - `TELEGRAM_REMINDER_SECRET` (required for cron-triggered Telegram reminders)
+- `RECEIPT_IMAGE_STORAGE_BACKEND` (optional, `local` by default; set to `supabase` to move receipt images off the app server)
 - `RECEIPT_IMAGE_CLEANUP_SECRET` (optional, required if cleanup should be triggered via protected HTTP route)
 - `RECEIPT_IMAGE_RETENTION_DAYS` (optional, defaults to `45` for receipt-image cleanup)
 - `AUTH_USERNAME`
 - `AUTH_PASSWORD_SHA256`
 - `AUTH_COOKIE_TOKEN`
+- `SUPABASE_URL` (optional if `SUPABASE_PROJECT_REF` is set; required for receipt-image storage when project ref is not available)
+- `SUPABASE_SERVICE_ROLE_KEY` (optional for the main app, required when receipt-image storage backend is `supabase`)
+- `SUPABASE_RECEIPTS_BUCKET` (optional for the main app, required when receipt-image storage backend is `supabase`)
 - `SUPABASE_PROJECT_REF` (optional, for auto-recovery)
 - `SUPABASE_MANAGEMENT_TOKEN` (optional, for auto-recovery)
 
@@ -196,9 +200,14 @@ Out of scope:
 - Manual authenticated UI test:
   - use `שלח בדיקה עכשיו` in `/settings`
 
-### If receipt images start consuming too much disk
-- Receipt images are currently stored under:
-  - `runtime-data/receipts/<receiptId>/...`
+### If receipt images start consuming too much storage
+- Receipt images can be stored in one of two backends:
+  - `local` -> `runtime-data/receipts/<receiptId>/...`
+  - `supabase` -> `supabase://<bucket>/receipts/<receiptId>/...`
+- Recommended production setup:
+  - `RECEIPT_IMAGE_STORAGE_BACKEND=supabase`
+  - `SUPABASE_SERVICE_ROLE_KEY=<service-role-key>`
+  - `SUPABASE_RECEIPTS_BUCKET=<bucket-name>`
 - Manual dry-run cleanup:
   - `npm run receipts:cleanup -- --dry-run`
 - Manual destructive cleanup:
@@ -213,8 +222,39 @@ Out of scope:
   - only receipts in `COMPLETED` / `FAILED`
   - only when older than `RECEIPT_IMAGE_RETENTION_DAYS` (default `45`)
   - clears `imageStorageKey` / `thumbnailStorageKey` after deletion
+  - removes either local files or Supabase Storage objects based on the stored key prefix
 
 ## Consolidated change log (major milestones)
+
+### 2026-03-31 - Added Supabase-backed receipt image storage adapter
+Why:
+- Receipt-image upload and cleanup flows were already working, but they still relied on app-server filesystem storage as the primary persistence layer
+- Before enabling real receipt capture in production, the image pipeline needed a clean way to move originals off the main server while keeping the same API contract for the future mobile app
+
+What changed:
+- Added an adapter-based receipt-image storage layer that keeps `local` storage as the default but can switch to `supabase` with environment configuration
+- Added Supabase Storage upload support for `POST /api/receipts/:id/image` while preserving the existing receipt image response shape and storage-key field usage
+- Extended receipt-image cleanup so it can delete either local files or Supabase Storage objects based on the stored image-key prefix
+- Documented the new runtime configuration, recommended production setup, and storage-specific cleanup behavior
+
+Files touched:
+- `/src/lib/receipt-image-storage.ts`
+- `/src/lib/receipt-image-cleanup.ts`
+- `/package.json`
+- `/package-lock.json`
+- `/.env.example`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- New optional dependency: `@supabase/supabase-js`
+- No DB migration
+- Existing behavior stays `local` by default, so deploys stay backward-compatible if no new env vars are added
+- To move receipt images off the server, production must set:
+  - `RECEIPT_IMAGE_STORAGE_BACKEND=supabase`
+  - `SUPABASE_SERVICE_ROLE_KEY`
+  - `SUPABASE_RECEIPTS_BUCKET`
+  - either `SUPABASE_URL` or `SUPABASE_PROJECT_REF`
+- Cleanup scripts and the protected cleanup route now remove remote objects as well as local files
 
 ### 2026-03-30 - Added receipt-image cleanup flow to control server disk usage
 Why:

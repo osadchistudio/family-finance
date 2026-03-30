@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const RECEIPT_IMAGE_UPLOAD_MAX_BYTES = 12 * 1024 * 1024;
+const RECEIPT_STORAGE_ROOT = path.join(process.cwd(), 'runtime-data');
 
 export class ReceiptImageUploadError extends Error {
   constructor(message: string) {
@@ -17,6 +18,14 @@ function sanitizeFilenamePart(value: string) {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     || 'receipt';
+}
+
+export function getReceiptStorageRootDir() {
+  return RECEIPT_STORAGE_ROOT;
+}
+
+export function getReceiptImageAbsolutePath(storageKey: string) {
+  return path.join(RECEIPT_STORAGE_ROOT, storageKey);
 }
 
 function inferExtension(file: File) {
@@ -51,7 +60,7 @@ export async function saveReceiptImage(receiptId: string, file: File) {
 
   const extension = inferExtension(file);
   const baseName = sanitizeFilenamePart(path.parse(file.name).name);
-  const storageDir = path.join(process.cwd(), 'runtime-data', 'receipts', receiptId);
+  const storageDir = path.join(RECEIPT_STORAGE_ROOT, 'receipts', receiptId);
   const filename = `${Date.now()}-${baseName}.${extension}`;
   const absolutePath = path.join(storageDir, filename);
 

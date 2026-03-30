@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-03-29
+Last updated: 2026-03-30
 
 ## Scope (Canonical)
 This document is **only** for the `family-finance` web application
@@ -46,6 +46,8 @@ Out of scope:
 - `TELEGRAM_WEBHOOK_SECRET` (optional)
 - `TELEGRAM_ALLOWED_CHAT_IDS` (required in production for secure Telegram access)
 - `TELEGRAM_REMINDER_SECRET` (required for cron-triggered Telegram reminders)
+- `RECEIPT_IMAGE_CLEANUP_SECRET` (optional, required if cleanup should be triggered via protected HTTP route)
+- `RECEIPT_IMAGE_RETENTION_DAYS` (optional, defaults to `45` for receipt-image cleanup)
 - `AUTH_USERNAME`
 - `AUTH_PASSWORD_SHA256`
 - `AUTH_COOKIE_TOKEN`
@@ -194,7 +196,52 @@ Out of scope:
 - Manual authenticated UI test:
   - use `שלח בדיקה עכשיו` in `/settings`
 
+### If receipt images start consuming too much disk
+- Receipt images are currently stored under:
+  - `runtime-data/receipts/<receiptId>/...`
+- Manual dry-run cleanup:
+  - `npm run receipts:cleanup -- --dry-run`
+- Manual destructive cleanup:
+  - `npm run receipts:cleanup`
+- Cron/API cleanup trigger:
+  - `POST /api/receipts/image-cleanup/run`
+  - header: `x-receipt-image-cleanup-secret: <RECEIPT_IMAGE_CLEANUP_SECRET>`
+- Optional query params for the API route:
+  - `dryRun=true`
+  - `retentionDays=<number>`
+- Default cleanup behavior:
+  - only receipts in `COMPLETED` / `FAILED`
+  - only when older than `RECEIPT_IMAGE_RETENTION_DAYS` (default `45`)
+  - clears `imageStorageKey` / `thumbnailStorageKey` after deletion
+
 ## Consolidated change log (major milestones)
+
+### 2026-03-30 - Added receipt-image cleanup flow to control server disk usage
+Why:
+- Even before moving to object storage, receipt-image uploads needed a retention strategy so the app server would not slowly fill up with old originals
+- The most important immediate risk reduction was giving the project a safe cleanup flow that can run manually or from cron without affecting the existing finance product
+
+What changed:
+- Added receipt-image cleanup helpers that find old receipt images for `COMPLETED` / `FAILED` receipts, delete the files, and clear the stored image keys from the receipt records
+- Added a protected cleanup API route at `POST /api/receipts/image-cleanup/run` using `RECEIPT_IMAGE_CLEANUP_SECRET`
+- Added a manual cleanup script plus `npm run receipts:cleanup` for dry runs and server-side execution
+- Documented the retention defaults and operational runbook for controlling disk usage until object storage replaces server-local receipt images
+
+Files touched:
+- `/src/lib/receipt-image-storage.ts`
+- `/src/lib/receipt-image-cleanup.ts`
+- `/src/app/api/receipts/image-cleanup/run/route.ts`
+- `/scripts/cleanupReceiptImages.ts`
+- `/package.json`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- New optional env keys:
+  - `RECEIPT_IMAGE_CLEANUP_SECRET`
+  - `RECEIPT_IMAGE_RETENTION_DAYS`
+- Cleanup is safe to introduce without changing any current dashboard or transactions flow
+- The route and script only touch receipt-image files and receipt image-key fields
+- This is still an interim filesystem-based retention solution until receipt images move to object storage
 
 ### 2026-03-30 - Added receipt image upload endpoint for the mobile capture flow
 Why:

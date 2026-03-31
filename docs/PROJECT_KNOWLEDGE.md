@@ -108,6 +108,7 @@ Out of scope:
 ### Receipt capture backend
 - Receipt image upload keeps using the same `POST /api/receipts/:id/image` flow, but now stores an optimized primary image plus a lightweight thumbnail
 - Receipt image retrieval is available via `GET /api/receipts/:id/image` with optional `?variant=thumbnail`
+- Receipt review can now be closed via `POST /api/receipts/:id/complete-review`, which marks the receipt `COMPLETED` and confirms any still-unreviewed items
 - Receipt image storage supports:
   - `local` filesystem keys under `runtime-data/receipts/...`
   - `supabase` object keys under `supabase://<bucket>/receipts/...`
@@ -235,6 +236,27 @@ Out of scope:
   - removes either local files or Supabase Storage objects based on the stored key prefix
 
 ## Consolidated change log (major milestones)
+
+### 2026-03-31 - Added receipt review completion endpoint
+Why:
+- The mobile app can already capture and reopen receipts, but it still lacked a clean backend action to finish a receipt-review flow
+- Before building history and repeated review usage on mobile, the backend needed a single way to mark a receipt as handled without manually patching the status field
+
+What changed:
+- Added `POST /api/receipts/:id/complete-review`
+- Added backend helper logic that marks any still-`UNREVIEWED` receipt items as `CONFIRMED`
+- Finalizing review now also moves the receipt itself to `COMPLETED` and clears `parseError`
+- Documented the new review-closing behavior in project knowledge
+
+Files touched:
+- `/src/lib/receipts.ts`
+- `/src/app/api/receipts/[id]/complete-review/route.ts`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- No DB migration
+- No new environment variables
+- Mobile and future web receipt-review flows now have a dedicated completion action instead of overloading the generic receipt `PATCH`
 
 ### 2026-03-31 - Added receipt image retrieval endpoint for mobile review flows
 Why:

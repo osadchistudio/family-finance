@@ -1217,3 +1217,26 @@ export async function processReceipt(
     status: input.status ?? (input.parseError ? 'FAILED' : 'NEEDS_REVIEW'),
   });
 }
+
+export async function completeReceiptReview(receiptId: string) {
+  return runReceiptQuery(async () => {
+    const exists = await receiptExists(receiptId);
+    if (!exists) {
+      return null;
+    }
+
+    await prisma.$executeRaw(Prisma.sql`
+      UPDATE "ReceiptItem"
+      SET
+        "reviewStatus" = 'CONFIRMED'::"ReceiptItemReviewStatus",
+        "updatedAt" = NOW()
+      WHERE "receiptId" = ${receiptId}
+        AND "reviewStatus" = 'UNREVIEWED'::"ReceiptItemReviewStatus"
+    `);
+
+    return updateReceipt(receiptId, {
+      status: 'COMPLETED',
+      parseError: null,
+    });
+  });
+}

@@ -46,6 +46,7 @@ Out of scope:
 - `TELEGRAM_WEBHOOK_SECRET` (optional)
 - `TELEGRAM_ALLOWED_CHAT_IDS` (required in production for secure Telegram access)
 - `TELEGRAM_REMINDER_SECRET` (required for cron-triggered Telegram reminders)
+- `MOBILE_APP_API_TOKEN` (optional, required if the mobile receipts app should access `/api/receipts*` without a browser session cookie)
 - `RECEIPT_IMAGE_STORAGE_BACKEND` (optional, `local` by default; set to `supabase` to move receipt images off the app server)
 - `RECEIPT_IMAGE_CLEANUP_SECRET` (optional, required if cleanup should be triggered via protected HTTP route)
 - `RECEIPT_IMAGE_RETENTION_DAYS` (optional, defaults to `45` for receipt-image cleanup)
@@ -65,6 +66,7 @@ Out of scope:
 - Middleware enforces auth for pages and APIs except explicit public routes
 - Login supports `remember me`
 - Brute-force protection exists (IP-based rate limiting)
+- The future mobile receipts app can be authorized separately with `MOBILE_APP_API_TOKEN`, but only for `/api/receipts*` routes; the rest of the product still requires the normal web session
 
 ### Transactions
 - Three primary views:
@@ -232,6 +234,31 @@ Out of scope:
   - removes either local files or Supabase Storage objects based on the stored key prefix
 
 ## Consolidated change log (major milestones)
+
+### 2026-03-31 - Added dedicated mobile token auth for receipt APIs
+Why:
+- The cross-platform receipts app cannot rely on the browser cookie session used by the web dashboard
+- Before any real iPhone/Android beta can talk to production, the backend needs a dedicated auth path that stays narrowly scoped and does not weaken the rest of the site
+
+What changed:
+- Added `MOBILE_APP_API_TOKEN` support in the shared auth layer
+- Updated middleware so `/api/receipts*` routes can be accessed with the mobile token header or bearer token, while the rest of the product still requires the normal session cookie
+- Kept the protected cleanup route excluded from mobile-token access so operational cleanup remains separately protected
+- Documented the new env and runtime behavior for the mobile receipts app
+
+Files touched:
+- `/src/lib/auth.ts`
+- `/src/middleware.ts`
+- `/.env.example`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- New optional env: `MOBILE_APP_API_TOKEN`
+- No DB migration
+- No existing web auth flow changes
+- Mobile receipt clients can authenticate against `/api/receipts*` using either:
+  - `x-mobile-api-token: <MOBILE_APP_API_TOKEN>`
+  - `Authorization: Bearer <MOBILE_APP_API_TOKEN>`
 
 ### 2026-03-31 - Added optimized receipt image uploads with thumbnails
 Why:

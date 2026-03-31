@@ -1,4 +1,5 @@
 export const AUTH_COOKIE_NAME = 'ff_auth';
+export const MOBILE_API_TOKEN_HEADER_NAME = 'x-mobile-api-token';
 const SESSION_TTL_DAYS = 14;
 
 const DEFAULT_USERNAME = 'osadchi.studio@gmail.com';
@@ -15,6 +16,11 @@ export function getAuthPasswordSha256(): string {
 
 export function getAuthCookieToken(): string {
   return process.env.AUTH_COOKIE_TOKEN?.trim() || DEFAULT_COOKIE_TOKEN;
+}
+
+export function getMobileAppApiToken(): string | null {
+  const token = process.env.MOBILE_APP_API_TOKEN?.trim();
+  return token ? token : null;
 }
 
 export function getSessionMaxAgeSeconds(): number {
@@ -42,4 +48,10 @@ export async function isValidCredentials(username: string, password: string): Pr
 export function isValidSessionToken(token: string | undefined): boolean {
   if (!token) return false;
   return token === getAuthCookieToken();
+}
+
+export function isValidMobileAppApiToken(token: string | undefined): boolean {
+  const expectedToken = getMobileAppApiToken();
+  if (!expectedToken || !token) return false;
+  return token === expectedToken;
 }

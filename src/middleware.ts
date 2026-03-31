@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AUTH_COOKIE_NAME, isValidSessionToken } from '@/lib/auth';
+import {
+  AUTH_COOKIE_NAME,
+  MOBILE_API_TOKEN_HEADER_NAME,
+  isValidMobileAppApiToken,
+  isValidSessionToken,
+} from '@/lib/auth';
 
 const PUBLIC_ROUTES = ['/login'];
 const PUBLIC_API_ROUTES = ['/api/auth/login', '/api/telegram/webhook', '/api/telegram/reminders/run'];
@@ -15,6 +20,25 @@ function isPublicPath(pathname: string): boolean {
   return false;
 }
 
+function isMobileReceiptsApiPath(pathname: string): boolean {
+  return pathname.startsWith('/api/receipts')
+    && pathname !== '/api/receipts/image-cleanup/run';
+}
+
+function getMobileApiRequestToken(request: NextRequest): string | undefined {
+  const headerToken = request.headers.get(MOBILE_API_TOKEN_HEADER_NAME)?.trim();
+  if (headerToken) {
+    return headerToken;
+  }
+
+  const authorizationHeader = request.headers.get('authorization')?.trim();
+  if (authorizationHeader?.startsWith('Bearer ')) {
+    return authorizationHeader.slice('Bearer '.length).trim() || undefined;
+  }
+
+  return undefined;
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -26,6 +50,13 @@ export function middleware(request: NextRequest) {
   const isAuthenticated = isValidSessionToken(token);
 
   if (isAuthenticated) {
+    return NextResponse.next();
+  }
+
+  if (
+    isMobileReceiptsApiPath(pathname)
+    && isValidMobileAppApiToken(getMobileApiRequestToken(request))
+  ) {
     return NextResponse.next();
   }
 

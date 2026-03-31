@@ -30,6 +30,7 @@ export async function POST(
     const savedImage = await saveReceiptImage(id, file);
     const receipt = await updateReceipt(id, {
       imageStorageKey: savedImage.imageStorageKey,
+      thumbnailStorageKey: savedImage.thumbnailStorageKey,
       status: 'PROCESSING',
     });
 

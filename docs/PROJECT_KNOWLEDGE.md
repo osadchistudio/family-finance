@@ -103,6 +103,13 @@ Out of scope:
 - File uploads now track source metadata (`WEB` / `TELEGRAM`)
 - Upload page shows recent upload history with source badges
 
+### Receipt capture backend
+- Receipt image upload keeps using the same `POST /api/receipts/:id/image` flow, but now stores an optimized primary image plus a lightweight thumbnail
+- Receipt image storage supports:
+  - `local` filesystem keys under `runtime-data/receipts/...`
+  - `supabase` object keys under `supabase://<bucket>/receipts/...`
+- Cleanup flows remove both the primary receipt image and the thumbnail based on the stored key prefix
+
 ### Telegram integration
 - Telegram bot supports upload webhook flow for supported finance files
 - Production access is restricted by `TELEGRAM_ALLOWED_CHAT_IDS`
@@ -225,6 +232,32 @@ Out of scope:
   - removes either local files or Supabase Storage objects based on the stored key prefix
 
 ## Consolidated change log (major milestones)
+
+### 2026-03-31 - Added optimized receipt image uploads with thumbnails
+Why:
+- Moving receipt images to object storage solved the server-disk risk, but mobile capture still needed lighter files so uploads stay fast and storage costs stay controlled
+- Before real iPhone/Android beta usage, the receipt upload flow needed a consistent optimized asset plus a smaller preview asset for future review screens
+
+What changed:
+- Added server-side receipt-image optimization using `sharp` so uploaded receipt images are normalized into a lighter JPEG before storage
+- Added thumbnail generation during `POST /api/receipts/:id/image`, and the receipt record now stores both `imageStorageKey` and `thumbnailStorageKey`
+- Kept a safe fallback path so if image optimization fails for a specific image, the upload still stores the original file instead of failing the whole capture flow
+- Updated project knowledge to document the optimized primary-image plus thumbnail behavior
+
+Files touched:
+- `/src/lib/receipt-image-storage.ts`
+- `/src/app/api/receipts/[id]/image/route.ts`
+- `/package.json`
+- `/package-lock.json`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- New optional dependency: `sharp`
+- No DB migration
+- Existing receipt upload API contract stays the same, but uploads now usually produce:
+  - one optimized primary image
+  - one thumbnail image
+- Cleanup already covers both keys, so no new operational cleanup flow is required
 
 ### 2026-03-31 - Added Supabase-backed receipt image storage adapter
 Why:

@@ -1,10 +1,15 @@
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import sharp from 'sharp';
 
 const RECEIPT_IMAGE_UPLOAD_MAX_BYTES = 12 * 1024 * 1024;
 const RECEIPT_STORAGE_ROOT = path.join(process.cwd(), 'runtime-data');
 const DEFAULT_STORAGE_BACKEND = 'local';
+const RECEIPT_IMAGE_MAX_DIMENSION = 2200;
+const RECEIPT_IMAGE_JPEG_QUALITY = 82;
+const RECEIPT_THUMBNAIL_MAX_DIMENSION = 720;
+const RECEIPT_THUMBNAIL_JPEG_QUALITY = 68;
 
 type ReceiptImageStorageBackend = 'local' | 'supabase';
 
@@ -31,6 +36,13 @@ type ReceiptImageStorageConfig =
       serviceRoleKey: string;
       bucket: string;
     };
+
+type ReceiptImageVariant = {
+  kind: 'image' | 'thumbnail';
+  storagePath: string;
+  buffer: Buffer;
+  contentType: string;
+};
 
 const globalForReceiptImageStorage = globalThis as unknown as {
   receiptImageSupabaseClient?: SupabaseClient;
@@ -198,6 +210,97 @@ async function safeLocalFileSize(absolutePath: string) {
   }
 }
 
+async function buildReceiptImageVariants(receiptId: string, file: File, buffer: Buffer) {
+  const baseName = sanitizeFilenamePart(path.parse(file.name).name);
+  const fallbackExtension = inferExtension(file);
+  const timestamp = Date.now();
+  const baseStoragePath = path.join('receipts', receiptId).replaceAll(path.sep, '/');
+
+  try {
+    const optimizedBuffer = await sharp(buffer, { failOn: 'none' })
+      .rotate()
+      .resize({
+        width: RECEIPT_IMAGE_MAX_DIMENSION,
+        height: RECEIPT_IMAGE_MAX_DIMENSION,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .jpeg({
+        quality: RECEIPT_IMAGE_JPEG_QUALITY,
+        mozjpeg: true,
+      })
+      .toBuffer();
+
+    const thumbnailBuffer = await sharp(buffer, { failOn: 'none' })
+      .rotate()
+      .resize({
+        width: RECEIPT_THUMBNAIL_MAX_DIMENSION,
+        height: RECEIPT_THUMBNAIL_MAX_DIMENSION,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .jpeg({
+        quality: RECEIPT_THUMBNAIL_JPEG_QUALITY,
+        mozjpeg: true,
+      })
+      .toBuffer();
+
+    return {
+      variants: [
+        {
+          kind: 'image',
+          storagePath: `${baseStoragePath}/${timestamp}-${baseName}.jpg`,
+          buffer: optimizedBuffer,
+          contentType: 'image/jpeg',
+        },
+        {
+          kind: 'thumbnail',
+          storagePath: `${baseStoragePath}/${timestamp}-${baseName}-thumb.jpg`,
+          buffer: thumbnailBuffer,
+          contentType: 'image/jpeg',
+        },
+      ] satisfies ReceiptImageVariant[],
+      usedOptimization: true,
+    };
+  } catch {
+    return {
+      variants: [
+        {
+          kind: 'image',
+          storagePath: `${baseStoragePath}/${timestamp}-${baseName}.${fallbackExtension}`,
+          buffer,
+          contentType: file.type,
+        },
+      ] satisfies ReceiptImageVariant[],
+      usedOptimization: false,
+    };
+  }
+}
+
+async function saveLocalReceiptImageVariant(variant: ReceiptImageVariant) {
+  const absolutePath = path.join(RECEIPT_STORAGE_ROOT, variant.storagePath);
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  await writeFile(absolutePath, variant.buffer);
+}
+
+async function uploadSupabaseReceiptImageVariant(
+  client: SupabaseClient,
+  bucket: string,
+  variant: ReceiptImageVariant
+) {
+  const { error } = await client.storage
+    .from(bucket)
+    .upload(variant.storagePath, variant.buffer, {
+      contentType: variant.contentType,
+      upsert: true,
+      cacheControl: '31536000',
+    });
+
+  if (error) {
+    throw new ReceiptImageUploadError(`Supabase upload failed: ${error.message}`);
+  }
+}
+
 export async function deleteReceiptImageStorageKey(
   storageKey: string,
   options: { dryRun?: boolean } = {}
@@ -280,46 +383,50 @@ export async function saveReceiptImage(receiptId: string, file: File) {
     throw new ReceiptImageUploadError('Uploaded image is too large');
   }
 
-  const extension = inferExtension(file);
-  const baseName = sanitizeFilenamePart(path.parse(file.name).name);
-  const filename = `${Date.now()}-${baseName}.${extension}`;
-  const storagePath = path.join('receipts', receiptId, filename).replaceAll(path.sep, '/');
   const config = getReceiptImageStorageConfig();
+  const { variants, usedOptimization } = await buildReceiptImageVariants(receiptId, file, buffer);
+  const primaryVariant = variants.find(variant => variant.kind === 'image');
+  const thumbnailVariant = variants.find(variant => variant.kind === 'thumbnail');
+
+  if (!primaryVariant) {
+    throw new ReceiptImageUploadError('Receipt image pipeline did not produce a primary image');
+  }
 
   if (config.backend === 'supabase') {
     const client = getSupabaseStorageClient(config);
-    const { error } = await client.storage
-      .from(config.bucket)
-      .upload(storagePath, buffer, {
-        contentType: file.type,
-        upsert: true,
-        cacheControl: '31536000',
-      });
 
-    if (error) {
-      throw new ReceiptImageUploadError(`Supabase upload failed: ${error.message}`);
+    for (const variant of variants) {
+      await uploadSupabaseReceiptImageVariant(client, config.bucket, variant);
     }
 
     return {
-      imageStorageKey: formatSupabaseStorageKey(config.bucket, storagePath),
-      mimeType: file.type,
-      sizeBytes: buffer.byteLength,
+      imageStorageKey: formatSupabaseStorageKey(config.bucket, primaryVariant.storagePath),
+      thumbnailStorageKey: thumbnailVariant
+        ? formatSupabaseStorageKey(config.bucket, thumbnailVariant.storagePath)
+        : null,
+      mimeType: primaryVariant.contentType,
+      sizeBytes: primaryVariant.buffer.byteLength,
+      thumbnailSizeBytes: thumbnailVariant?.buffer.byteLength ?? 0,
       originalFilename: file.name,
       backend: config.backend,
+      usedOptimization,
     };
   }
 
-  const storageDir = path.join(RECEIPT_STORAGE_ROOT, 'receipts', receiptId);
-  const absolutePath = path.join(storageDir, filename);
-
-  await mkdir(storageDir, { recursive: true });
-  await writeFile(absolutePath, buffer);
+  for (const variant of variants) {
+    await saveLocalReceiptImageVariant(variant);
+  }
 
   return {
-    imageStorageKey: formatLocalStorageKey(storagePath),
-    mimeType: file.type,
-    sizeBytes: buffer.byteLength,
+    imageStorageKey: formatLocalStorageKey(primaryVariant.storagePath),
+    thumbnailStorageKey: thumbnailVariant
+      ? formatLocalStorageKey(thumbnailVariant.storagePath)
+      : null,
+    mimeType: primaryVariant.contentType,
+    sizeBytes: primaryVariant.buffer.byteLength,
+    thumbnailSizeBytes: thumbnailVariant?.buffer.byteLength ?? 0,
     originalFilename: file.name,
     backend: config.backend,
+    usedOptimization,
   };
 }

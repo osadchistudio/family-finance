@@ -1,4 +1,4 @@
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import sharp from 'sharp';
@@ -210,6 +210,16 @@ async function safeLocalFileSize(absolutePath: string) {
   }
 }
 
+function inferContentTypeFromStoragePath(storagePath: string) {
+  const normalized = storagePath.toLowerCase();
+  if (normalized.endsWith('.jpg') || normalized.endsWith('.jpeg')) return 'image/jpeg';
+  if (normalized.endsWith('.png')) return 'image/png';
+  if (normalized.endsWith('.webp')) return 'image/webp';
+  if (normalized.endsWith('.heic')) return 'image/heic';
+  if (normalized.endsWith('.heif')) return 'image/heif';
+  return 'application/octet-stream';
+}
+
 async function buildReceiptImageVariants(receiptId: string, file: File, buffer: Buffer) {
   const baseName = sanitizeFilenamePart(path.parse(file.name).name);
   const fallbackExtension = inferExtension(file);
@@ -340,6 +350,39 @@ export async function deleteReceiptImageStorageKey(
   return {
     existed,
     sizeBytes,
+    backend: parsed.backend,
+  };
+}
+
+export async function loadReceiptImageStorageKey(storageKey: string) {
+  const parsed = parseReceiptStorageKey(storageKey);
+
+  if (parsed.backend === 'supabase') {
+    const config = getReceiptImageStorageConfig();
+    if (config.backend !== 'supabase') {
+      throw new ReceiptImageUploadError('Cannot load Supabase receipt image without Supabase storage configuration');
+    }
+
+    const client = getSupabaseStorageClient(config);
+    const { data, error } = await client.storage.from(parsed.bucket).download(parsed.path);
+    if (error || !data) {
+      throw new ReceiptImageUploadError(
+        `Failed to load Supabase receipt image: ${error?.message ?? 'file not found'}`
+      );
+    }
+
+    return {
+      buffer: Buffer.from(await data.arrayBuffer()),
+      contentType: data.type || inferContentTypeFromStoragePath(parsed.path),
+      backend: parsed.backend,
+    };
+  }
+
+  const absolutePath = path.join(RECEIPT_STORAGE_ROOT, parsed.path);
+
+  return {
+    buffer: await readFile(absolutePath),
+    contentType: inferContentTypeFromStoragePath(parsed.path),
     backend: parsed.backend,
   };
 }

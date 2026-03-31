@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ReceiptInputError, ReceiptDomainNotReadyError, receiptExists, updateReceipt } from '@/lib/receipts';
-import { ReceiptImageUploadError, saveReceiptImage } from '@/lib/receipt-image-storage';
+import {
+  ReceiptInputError,
+  ReceiptDomainNotReadyError,
+  getReceiptById,
+  receiptExists,
+  updateReceipt,
+} from '@/lib/receipts';
+import {
+  ReceiptImageUploadError,
+  loadReceiptImageStorageKey,
+  saveReceiptImage,
+} from '@/lib/receipt-image-storage';
 
 type RouteContext = {
   params: Promise<{
@@ -58,6 +68,58 @@ export async function POST(
     console.error('Upload receipt image error:', error);
     return NextResponse.json(
       { error: 'Failed to upload receipt image' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(
+  request: NextRequest,
+  context: RouteContext
+) {
+  try {
+    const { id } = await context.params;
+    const variant = request.nextUrl.searchParams.get('variant') === 'thumbnail'
+      ? 'thumbnail'
+      : 'image';
+
+    const receipt = await getReceiptById(id);
+    if (!receipt) {
+      return NextResponse.json({ error: 'Receipt not found' }, { status: 404 });
+    }
+
+    const storageKey = variant === 'thumbnail'
+      ? receipt.thumbnailStorageKey || receipt.imageStorageKey
+      : receipt.imageStorageKey;
+
+    if (!storageKey) {
+      return NextResponse.json({ error: 'Receipt image not found' }, { status: 404 });
+    }
+
+    const asset = await loadReceiptImageStorageKey(storageKey);
+
+    return new NextResponse(new Uint8Array(asset.buffer), {
+      status: 200,
+      headers: {
+        'Content-Type': asset.contentType,
+        'Cache-Control': 'private, max-age=300',
+      },
+    });
+  } catch (error) {
+    if (error instanceof ReceiptImageUploadError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    if (error instanceof ReceiptDomainNotReadyError) {
+      return NextResponse.json(
+        { error: 'Receipt domain migration has not been applied yet' },
+        { status: 503 }
+      );
+    }
+
+    console.error('Load receipt image error:', error);
+    return NextResponse.json(
+      { error: 'Failed to load receipt image' },
       { status: 500 }
     );
   }

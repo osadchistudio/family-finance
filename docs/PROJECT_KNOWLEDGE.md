@@ -1,6 +1,6 @@
 # Family Finance - Project Knowledge
 
-Last updated: 2026-03-31
+Last updated: 2026-05-17
 
 ## Scope (Canonical)
 This document is **only** for the `family-finance` web application
@@ -58,6 +58,32 @@ Out of scope:
 - `SUPABASE_RECEIPTS_BUCKET` (optional for the main app, required when receipt-image storage backend is `supabase`)
 - `SUPABASE_PROJECT_REF` (optional, for auto-recovery)
 - `SUPABASE_MANAGEMENT_TOKEN` (optional, for auto-recovery)
+
+## Recent changes
+
+### 2026-05-17 - Telegram upload account-resolution fix
+Why:
+- Telegram document uploads could fail even when the same bank/card files worked through the web uploader
+- The Telegram flow resolved accounts differently from `/api/upload`, which could trigger account unique-constraint failures for existing bank and card accounts
+- Build verification for the Telegram fix also exposed a small root-level TypeScript regression that had to be cleared before safe deploy
+
+What changed:
+- Added a shared import-account resolver for bank/card uploads
+- Reused the shared resolver in both the web upload route and the Telegram bot upload flow
+- Added explicit Telegram file-download status validation and richer upload-error logging context
+- Fixed a root `page.tsx` `implicit any` so production build verification can complete cleanly again
+
+Files touched:
+- `/src/lib/import-accounts.ts`
+- `/src/app/api/upload/route.ts`
+- `/src/services/telegram/TelegramBotService.ts`
+- `/page.tsx`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- Telegram uploads now reuse the same account matching/creation logic as the web uploader, reducing false failures on existing accounts
 
 ## Current product behavior (canonical)
 

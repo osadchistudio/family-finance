@@ -10,6 +10,7 @@ import { FileParserService } from '@/services/parsers/FileParserService';
 import { KeywordCategorizer } from '@/services/categorization/KeywordCategorizer';
 import { RecurringKeywordMatcher } from '@/services/categorization/RecurringKeywordMatcher';
 import { isLikelySameMerchant } from '@/lib/merchantSimilarity';
+import { resolveOrCreateImportAccount } from '@/lib/import-accounts';
 
 export class TelegramBotService {
   private bot: Telegraf;
@@ -205,6 +206,9 @@ export class TelegramBotService {
       // Download file from Telegram
       const fileLink = await ctx.telegram.getFileLink(document.file_id);
       const response = await fetch(fileLink.href);
+      if (!response.ok) {
+        throw new Error(`Telegram download failed with status ${response.status}`);
+      }
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
@@ -256,7 +260,12 @@ export class TelegramBotService {
       );
 
     } catch (error) {
-      console.error('Telegram file upload error:', error);
+      console.error('Telegram file upload error:', {
+        error,
+        filename,
+        fileId: document.file_id,
+        chatId: 'chat' in ctx && ctx.chat ? String(ctx.chat.id) : null,
+      });
       await ctx.reply(
         '❌ שגיאה בעיבוד הקובץ\nנסה שוב או פתח את מסך ההעלאות במערכת',
         this.buildPostUploadKeyboard({ hasTransactions: false, hasUncategorized: false })
@@ -285,26 +294,10 @@ export class TelegramBotService {
     let uncategorized = 0;
     const errorDetails: string[] = [];
 
-    // Get or create account
-    const accountName = `${parseResult.institution} - ${parseResult.cardNumber || 'חשבון'}`;
-    let account = await prisma.account.findFirst({
-      where: {
-        OR: [
-          { cardNumber: parseResult.cardNumber || undefined },
-          { name: accountName },
-        ],
-      },
+    const account = await resolveOrCreateImportAccount({
+      institution: parseResult.institution,
+      cardNumber: parseResult.cardNumber,
     });
-
-    if (!account) {
-      account = await prisma.account.create({
-        data: {
-          name: accountName,
-          institution: parseResult.institution || 'UNKNOWN',
-          cardNumber: parseResult.cardNumber || null,
-        },
-      });
-    }
 
     // Load categorizers
     const keywordCategorizer = new KeywordCategorizer();

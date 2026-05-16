@@ -37,7 +37,7 @@ async function getTransactions() {
     orderBy: { date: 'desc' }
   });
 
-  return transactions.map((tx) => ({
+  return transactions.map((tx: (typeof transactions)[number]) => ({
     id: tx.id,
     date: tx.date.toISOString(),
     description: tx.description,

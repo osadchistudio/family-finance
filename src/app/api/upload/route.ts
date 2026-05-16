@@ -5,6 +5,7 @@ import { keywordCategorizer } from '@/services/categorization/KeywordCategorizer
 import { recurringKeywordMatcher } from '@/services/categorization/RecurringKeywordMatcher';
 import { Institution, Prisma } from '@prisma/client';
 import { isLikelySameMerchant } from '@/lib/merchantSimilarity';
+import { resolveOrCreateImportAccount } from '@/lib/import-accounts';
 
 const AMOUNT_EPSILON = 0.01;
 
@@ -33,50 +34,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get or create account - now with card number support
-    let account = await prisma.account.findFirst({
-      where: {
-        institution: parseResult.institution,
-        cardNumber: parseResult.cardNumber || null
-      }
+    const account = await resolveOrCreateImportAccount({
+      institution: parseResult.institution,
+      cardNumber: parseResult.cardNumber,
+      accountNameOverride: accountName,
     });
-
-    if (!account && parseResult.cardNumber) {
-      // Maybe account exists without cardNumber - update it
-      const existingAccount = await prisma.account.findFirst({
-        where: {
-          institution: parseResult.institution,
-          cardNumber: null
-        }
-      });
-
-      if (existingAccount) {
-        const baseName = getDefaultAccountName(parseResult.institution);
-        account = await prisma.account.update({
-          where: { id: existingAccount.id },
-          data: {
-            cardNumber: parseResult.cardNumber,
-            name: `${baseName} - ${parseResult.cardNumber}`
-          }
-        });
-      }
-    }
-
-    if (!account) {
-      // Generate account name with card number if available
-      const baseName = accountName || getDefaultAccountName(parseResult.institution);
-      const fullName = parseResult.cardNumber
-        ? `${baseName} - ${parseResult.cardNumber}`
-        : baseName;
-
-      account = await prisma.account.create({
-        data: {
-          name: fullName,
-          institution: parseResult.institution,
-          cardNumber: parseResult.cardNumber || null
-        }
-      });
-    }
 
     // Create file upload record
     const fileUpload = await prisma.fileUpload.create({
@@ -304,15 +266,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-function getDefaultAccountName(institution: Institution): string {
-  const names: Record<Institution, string> = {
-    BANK_HAPOALIM: 'בנק הפועלים',
-    BANK_LEUMI: 'בנק לאומי',
-    ISRACARD: 'ישראכרט',
-    LEUMI_CARD: 'לאומי קארד',
-    OTHER: 'חשבון אחר'
-  };
-  return names[institution];
 }

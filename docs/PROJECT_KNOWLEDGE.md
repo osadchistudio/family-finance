@@ -61,6 +61,25 @@ Out of scope:
 
 ## Recent changes
 
+### 2026-05-17 - Fixed similar-category propagation from uncategorized rows
+Why:
+- When assigning a category from the uncategorized transactions view, checking `עדכן תנועות דומות` could leave another same-merchant uncategorized row untouched
+- The propagation query used a `NOT` comparison against a nullable `categoryId`, which can skip `NULL` category rows instead of treating them as different from the new category
+
+What changed:
+- Updated manual category propagation to explicitly include uncategorized candidate rows when assigning a real category
+- Applied the same nullable-category fix to single-transaction auto-categorization propagation
+
+Files touched:
+- `/src/app/api/transactions/[id]/category/route.ts`
+- `/src/app/api/transactions/[id]/auto-categorize/route.ts`
+- `/docs/PROJECT_KNOWLEDGE.md`
+
+Deploy/runtime impact:
+- Normal deploy
+- No DB migration
+- Similar uncategorized transactions from the same merchant should now be assigned together when `עדכן תנועות דומות` is checked
+
 ### 2026-05-17 - Telegram upload account-resolution fix
 Why:
 - Telegram document uploads could fail even when the same bank/card files worked through the web uploader

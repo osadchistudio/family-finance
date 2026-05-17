@@ -6,6 +6,21 @@ import { extractMerchantSignature, isLikelySameMerchant } from '@/lib/merchantSi
 
 const MAX_SAFE_SIMILAR_UPDATES = 15;
 
+function buildDifferentCategoryWhere(categoryId: string | null) {
+  if (!categoryId) {
+    return { categoryId: { not: null } };
+  }
+
+  // Explicitly include uncategorized rows. A plain NOT comparison on a nullable
+  // column can skip NULL rows, which breaks propagation from uncategorized views.
+  return {
+    OR: [
+      { categoryId: null },
+      { categoryId: { not: categoryId } },
+    ],
+  };
+}
+
 /**
  * Update transaction category and optionally learn for future
  */
@@ -58,9 +73,7 @@ export async function PATCH(
         where: {
           id: { not: id },
           isExcluded: false,
-          NOT: {
-            categoryId: categoryId ?? null,
-          },
+          ...buildDifferentCategoryWhere(categoryId ?? null),
           ...(sourceIsExpense
             ? { amount: { lt: 0 } }
             : { amount: { gt: 0 } }),

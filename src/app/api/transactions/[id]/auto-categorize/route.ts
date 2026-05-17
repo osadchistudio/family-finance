@@ -14,6 +14,15 @@ import { keywordCategorizer } from '@/services/categorization/KeywordCategorizer
 
 const MAX_SAFE_SIMILAR_UPDATES = 15;
 
+function buildDifferentCategoryWhere(categoryId: string) {
+  return {
+    OR: [
+      { categoryId: null },
+      { categoryId: { not: categoryId } },
+    ],
+  };
+}
+
 /**
  * Auto-categorize a single transaction by id
  */
@@ -110,9 +119,7 @@ export async function POST(
         where: {
           id: { not: transaction.id },
           isExcluded: false,
-          NOT: {
-            categoryId: category.id,
-          },
+          ...buildDifferentCategoryWhere(category.id),
           ...(sourceIsExpense
             ? { amount: { lt: 0 } }
             : { amount: { gt: 0 } }),
